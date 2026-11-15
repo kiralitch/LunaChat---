@@ -1,0 +1,8 @@
+﻿; LunaChat 服务端数据库配置模板
+; 复制成 config.ini 后按本机情况修改；config.ini 已被 .gitignore 忽略，不会进仓库
+[database]
+host=127.0.0.1
+port=3306
+user=root
+password=你的密码
+name=luna_chat

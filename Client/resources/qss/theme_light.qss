@@ -1,0 +1,135 @@
+﻿/* LunaChat - Discord 风格日间主题 */
+QWidget {
+    background-color: #ffffff;
+    color: #060607;
+    font-family: "Segoe UI", "Microsoft YaHei UI";
+    font-size: 13px;
+}
+QMainWindow, QDialog { background-color: #ffffff; }
+
+#Sidebar { background-color: #f2f3f5; border-right: 1px solid #e3e5e8; }
+QPushButton#SidebarButton {
+    background-color: #e3e5e8;
+    color: #060607;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 8px;
+}
+QPushButton#SidebarButton:hover { background-color: #5865f2; color: #ffffff; }
+
+QListWidget#ChannelList { background-color: transparent; border: none; outline: 0; }
+QListWidget#ChannelList::item {
+    padding: 8px 10px;
+    margin: 2px 6px;
+    border-radius: 4px;
+    color: #5c5e66;
+}
+QListWidget#ChannelList::item:hover { background-color: #e3e5e8; color: #060607; }
+QListWidget#ChannelList::item:selected { background-color: #d7d9dd; color: #060607; }
+
+QLabel#ChatTitle {
+    color: #060607;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 12px 14px;
+    border-bottom: 1px solid #e3e5e8;
+    background-color: #ffffff;
+}
+QScrollArea#MessageList { background-color: #ffffff; border: none; outline: 0; }
+QWidget#MessageRow { background-color: transparent; }
+QWidget#MessageRow:hover { background-color: #f7f8f9; }
+QLabel#Avatar {
+    background-color: #5865f2;
+    color: #ffffff;
+    border-radius: 18px;
+    font-weight: 700;
+    font-size: 15px;
+}
+QLabel#AvatarSelf {
+    background-color: #b5bac1;
+    color: #ffffff;
+    border-radius: 18px;
+    font-weight: 700;
+    font-size: 15px;
+}
+QLabel#MessageHead { color: #060607; font-weight: 600; }
+QLabel#MessageBody { color: #2b2d31; }
+QLabel#MessageBubble {
+    color: #1f2023;
+    background-color: #f2f3f5;
+    border-radius: 10px;
+    padding: 7px 11px;
+}
+
+QLineEdit#MessageInput {
+    background-color: #ebedef;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: #060607;
+}
+QLineEdit#MessageInput:focus { background-color: #e3e5e8; }
+
+QPushButton {
+    background-color: #5865f2;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+}
+QPushButton:hover { background-color: #4752c4; }
+QPushButton:pressed { background-color: #3c45a5; }
+QPushButton:disabled { background-color: #e3e5e8; color: #a1a4ab; }
+
+QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDateTimeEdit {
+    background-color: #f2f3f5;
+    border: 1px solid #e3e5e8;
+    border-radius: 6px;
+    padding: 6px 8px;
+    color: #060607;
+    selection-background-color: #5865f2;
+}
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus { border-color: #5865f2; }
+
+QListWidget, QTableWidget, QScrollArea, QListView {
+    background-color: #ffffff;
+    border: 1px solid #e3e5e8;
+    border-radius: 6px;
+    outline: 0;
+}
+QListWidget::item, QTableWidget::item { padding: 6px; border-radius: 4px; }
+QListWidget::item:selected, QTableWidget::item:selected {
+    background-color: #d7d9dd;
+    color: #060607;
+}
+QHeaderView::section {
+    background-color: #f2f3f5;
+    color: #5c5e66;
+    border: none;
+    padding: 6px;
+    font-weight: 600;
+}
+QTableWidget { gridline-color: #e3e5e8; }
+
+QMenu { background-color: #ffffff; border: 1px solid #e3e5e8; border-radius: 6px; padding: 4px; }
+QMenu::item { padding: 6px 18px; border-radius: 4px; }
+QMenu::item:selected { background-color: #5865f2; color: #ffffff; }
+
+QStatusBar { background-color: #f2f3f5; color: #5c5e66; }
+QProgressBar {
+    border: none;
+    border-radius: 4px;
+    background-color: #e3e5e8;
+    text-align: center;
+    color: #060607;
+    height: 8px;
+}
+QProgressBar::chunk { background-color: #5865f2; border-radius: 4px; }
+
+QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
+QScrollBar::handle:vertical { background: #c4c7cc; border-radius: 5px; min-height: 30px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar:horizontal { background: transparent; height: 10px; }
+QScrollBar::handle:horizontal { background: #c4c7cc; border-radius: 5px; min-width: 30px; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+QLabel#SectionLabel { color: #5c5e66; font-size: 11px; font-weight: 700; padding: 6px 4px 2px 4px; }

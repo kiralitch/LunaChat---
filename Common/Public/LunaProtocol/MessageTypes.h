@@ -1,0 +1,105 @@
+﻿#pragma once
+
+#include <QString>
+
+// 协议 type 字符串的唯一登记处：新消息类型必须先在这里加，两端只引用不手写
+namespace MsgType {
+
+// 基础与连接
+inline const QString kRegister      = QStringLiteral("register");
+inline const QString kLogin         = QStringLiteral("login");
+inline const QString kLoginResp     = QStringLiteral("login_resp");
+inline const QString kHeartbeat     = QStringLiteral("heartbeat");
+inline const QString kHeartbeatResp = QStringLiteral("heartbeat_resp");
+inline const QString kUserList      = QStringLiteral("user_list");
+// 阶段5 新增登记：自建群组
+inline const QString kGroupCreate     = QStringLiteral("group_create");
+inline const QString kGroupCreateResp = QStringLiteral("group_create_resp");
+inline const QString kGroupList       = QStringLiteral("group_list");
+inline const QString kGroupListResp   = QStringLiteral("group_list_resp");
+inline const QString kGroupInvite     = QStringLiteral("group_invite");
+inline const QString kGroupInviteResp = QStringLiteral("group_invite_resp");
+inline const QString kKick          = QStringLiteral("kick");
+inline const QString kError         = QStringLiteral("error");
+// 阶段11 新增登记：好友系统
+inline const QString kFriendRequest     = QStringLiteral("friend_request");
+inline const QString kFriendAccept      = QStringLiteral("friend_accept");
+inline const QString kFriendList        = QStringLiteral("friend_list");
+inline const QString kFriendListResp    = QStringLiteral("friend_list_resp");
+inline const QString kFriendNotify      = QStringLiteral("friend_notify");
+// 阶段11 新增登记：个人资料（改昵称 / 换头像 / 个人主页）
+inline const QString kProfileGet    = QStringLiteral("profile_get");
+inline const QString kProfileUpdate = QStringLiteral("profile_update");
+inline const QString kProfileResp   = QStringLiteral("profile_resp");
+inline const QString kAvatarGet     = QStringLiteral("avatar_get");
+inline const QString kAvatarResp    = QStringLiteral("avatar_resp");
+
+// 聊天与文件
+inline const QString kChatGroup     = QStringLiteral("chat_group");
+inline const QString kChatPrivate   = QStringLiteral("chat_private");
+inline const QString kChatBroadcast = QStringLiteral("chat_broadcast");
+// 阶段3 新增登记：历史消息查询（协议 §4.3 未列，按规范先在此登记）
+inline const QString kChatHistory     = QStringLiteral("chat_history");
+inline const QString kChatHistoryResp = QStringLiteral("chat_history_resp");
+inline const QString kOfflineMsg    = QStringLiteral("offline_msg");
+inline const QString kFileMeta      = QStringLiteral("file_meta");
+inline const QString kFileChunk     = QStringLiteral("file_chunk");
+inline const QString kFileDone      = QStringLiteral("file_done");
+inline const QString kFileResp      = QStringLiteral("file_resp");
+inline const QString kFileShared    = QStringLiteral("file_shared");   // 群文件已存入共享文件夹
+
+// 群活动报名
+inline const QString kActivityCreate      = QStringLiteral("activity_create");
+inline const QString kActivityList        = QStringLiteral("activity_list");
+inline const QString kActivityListResp    = QStringLiteral("activity_list_resp");
+inline const QString kActivityDetail      = QStringLiteral("activity_detail");
+inline const QString kActivityDetailResp  = QStringLiteral("activity_detail_resp");
+inline const QString kActivitySignup      = QStringLiteral("activity_signup");
+inline const QString kActivitySignupCancel= QStringLiteral("activity_signup_cancel");
+inline const QString kActivityCancel      = QStringLiteral("activity_cancel");
+inline const QString kActivityNotify      = QStringLiteral("activity_notify");
+inline const QString kActivityEnd         = QStringLiteral("activity_end");
+
+// 朋友圈
+inline const QString kMomentPublish   = QStringLiteral("moment_publish");
+inline const QString kMomentList      = QStringLiteral("moment_list");
+inline const QString kMomentListResp  = QStringLiteral("moment_list_resp");
+inline const QString kMomentLike      = QStringLiteral("moment_like");
+inline const QString kMomentComment   = QStringLiteral("moment_comment");
+inline const QString kMomentDelete    = QStringLiteral("moment_delete");
+inline const QString kMomentNotify    = QStringLiteral("moment_notify");
+// 阶段8 新增登记：图片按需拉取 + 各操作回执
+inline const QString kMomentImage       = QStringLiteral("moment_image");
+inline const QString kMomentImageResp   = QStringLiteral("moment_image_resp");
+inline const QString kMomentLikeResp    = QStringLiteral("moment_like_resp");
+inline const QString kMomentCommentResp = QStringLiteral("moment_comment_resp");
+inline const QString kMomentDeleteResp  = QStringLiteral("moment_delete_resp");
+
+// 随机匹配
+inline const QString kMatchStart   = QStringLiteral("match_start");
+inline const QString kMatchCancel  = QStringLiteral("match_cancel");
+inline const QString kMatchResult  = QStringLiteral("match_result");
+inline const QString kMatchTimeout = QStringLiteral("match_timeout");
+inline const QString kMatchEnd     = QStringLiteral("match_end");
+inline const QString kMatchMessage = QStringLiteral("match_message");
+
+// 语音
+inline const QString kVoiceMeta  = QStringLiteral("voice_meta");
+inline const QString kVoiceChunk = QStringLiteral("voice_chunk");
+inline const QString kVoiceDone  = QStringLiteral("voice_done");
+inline const QString kVoiceResp  = QStringLiteral("voice_resp");
+
+// 阶段1 自检专用：冒充登录上报昵称；阶段2 起由 login 取代
+inline const QString kHello = QStringLiteral("hello");
+
+// 阶段11 新增登记：群资料与群生命周期
+inline const QString kGroupInfoGet    = QStringLiteral("group_info_get");
+inline const QString kGroupInfoResp   = QStringLiteral("group_info_resp");
+inline const QString kGroupInfoUpdate = QStringLiteral("group_info_update");
+inline const QString kGroupLeave      = QStringLiteral("group_leave");
+inline const QString kGroupTransfer   = QStringLiteral("group_transfer");
+inline const QString kGroupDissolve   = QStringLiteral("group_dissolve");
+inline const QString kGroupAvatarGet  = QStringLiteral("group_avatar_get");
+inline const QString kGroupAvatarResp = QStringLiteral("group_avatar_resp");
+
+}
