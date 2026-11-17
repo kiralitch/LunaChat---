@@ -1,23 +1,30 @@
 ﻿#pragma once
 
-#include <QDialog>
 #include <QJsonObject>
+#include <QWidget>
 
 class QLabel;
+class QToolButton;
+class QPushButton;
 class QTableWidget;
 class LunaClient;
 
-// 群活动面板：列表 + 报名/取消报名 + 群主发布/取消 + 详情（含名单）
-class ActivityDialog : public QDialog
+// 群活动页面（内嵌在 MainWindow 的 QStackedWidget 里）
+class ActivityPage : public QWidget
 {
     Q_OBJECT
 
 public:
-    ActivityDialog(LunaClient *client, qint64 groupId, quint64 userId,
-                   bool canManage, QWidget *parent = nullptr);
+    ActivityPage(LunaClient *client, quint64 userId, QWidget *parent = nullptr);
+
+    // 切到本页前调用：指定群 + 是否有管理权限
+    void setGroup(qint64 groupId, bool canManage);
+    void refresh();
+
+signals:
+    void backRequested();   // 顶部返回箭头
 
 private slots:
-    void onRefresh();
     void onCreate();
     void onSignup();
     void onCancelSignup();
@@ -37,4 +44,7 @@ private:
 
     QTableWidget *m_table = nullptr;
     QLabel *m_statusLabel = nullptr;
+    QPushButton *m_createButton = nullptr;
+    QPushButton *m_cancelButton = nullptr;
+    QToolButton *m_backButton = nullptr;
 };

@@ -3,6 +3,7 @@
 #include <QDateTime>
 #include <QCoreApplication>
 #include <QDir>
+#include <QRegularExpression>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -30,7 +31,9 @@ bool GroupHandler::handle(ClientSession *session, const QJsonObject &frame)
     const bool known = (type == MsgType::kGroupCreate || type == MsgType::kGroupList
                         || type == MsgType::kGroupInvite || type == MsgType::kGroupInfoGet
                         || type == MsgType::kGroupInfoUpdate || type == MsgType::kGroupLeave
-                        || type == MsgType::kGroupTransfer || type == MsgType::kGroupDissolve || type == MsgType::kGroupAvatarGet);
+                        || type == MsgType::kGroupTransfer || type == MsgType::kGroupDissolve || type == MsgType::kGroupAvatarGet
+                        || type == MsgType::kGroupFilesList || type == MsgType::kGroupFileMkdir
+                        || type == MsgType::kGroupFileDelete || type == MsgType::kGroupFileDownload);
     if (!known)
         return false;
 
@@ -55,6 +58,14 @@ bool GroupHandler::handle(ClientSession *session, const QJsonObject &frame)
         return handleTransfer(session, frame);
     if (type == MsgType::kGroupAvatarGet)
         return handleAvatarGet(session, frame);
+    if (type == MsgType::kGroupFilesList)
+        return handleFilesList(session, frame);
+    if (type == MsgType::kGroupFileMkdir)
+        return handleMkdir(session, frame);
+    if (type == MsgType::kGroupFileDelete)
+        return handleDeleteFile(session, frame);
+    if (type == MsgType::kGroupFileDownload)
+        return handleDownload(session, frame);
     return handleDissolve(session, frame);
 }
 
@@ -372,5 +383,196 @@ bool GroupHandler::handleAvatarGet(ClientSession *session, const QJsonObject &fr
     reply.insert(QStringLiteral("ts"), nowMs());
     reply.insert(QStringLiteral("data"), data);
     session->sendFrame(reply);
+    return true;
+}
+// ================= 群共享文件夹 =================
+
+namespace {
+QString groupFolder(qint64 groupId, quint64 userId)
+{
+    QString folder = DbManager::instance().groupInfo(groupId, userId)
+                         .value(QStringLiteral("folderPath")).toString();
+    if (folder.isEmpty())
+        folder = QCoreApplication::applicationDirPath()
+                 + QStringLiteral("/group_files/%1").arg(groupId);
+    QDir().mkpath(folder);
+    return folder;
+}
+}
+
+
+bool GroupHandler::handleFilesList(ClientSession *session, const QJsonObject &frame)
+{
+    const QJsonObject req = frame.value(QStringLiteral("data")).toObject();
+    const qint64 groupId = static_cast<qint64>(req.value(QStringLiteral("groupId")).toDouble());
+    if (!DbManager::instance().isGroupMember(groupId, session->userId())) {
+        sendError(session, 403, QStringLiteral("你不在该群中"));
+        return true;
+    }
+
+    const QString base = groupFolder(groupId, session->userId());
+    QString rel = req.value(QStringLiteral("path")).toString();
+    if (rel.contains(QStringLiteral("..")))
+        rel.clear();
+    QString folder = rel.isEmpty() ? base : QDir(base).filePath(rel);
+    if (!QDir(folder).exists()) {
+        rel.clear();
+        folder = base;
+    }
+
+    QJsonArray entries;
+    const QFileInfoList infos = QDir(folder).entryInfoList(QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot,
+                                                           QDir::DirsFirst | QDir::Name);
+    for (const QFileInfo &info : infos) {
+        QJsonObject item;
+        item.insert(QStringLiteral("name"), info.fileName());
+        item.insert(QStringLiteral("dir"), info.isDir());
+        item.insert(QStringLiteral("size"), static_cast<double>(info.size()));
+        item.insert(QStringLiteral("modified"),
+                    info.lastModified().toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+        entries.append(item);
+    }
+
+    QJsonObject data;
+    data.insert(QStringLiteral("groupId"), static_cast<double>(groupId));
+    data.insert(QStringLiteral("folderPath"), folder);
+    data.insert(QStringLiteral("path"), rel);
+    data.insert(QStringLiteral("entries"), entries);
+
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kGroupFilesResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), data);
+    session->sendFrame(reply);
+    return true;
+}
+
+bool GroupHandler::handleMkdir(ClientSession *session, const QJsonObject &frame)
+{
+    const QJsonObject req = frame.value(QStringLiteral("data")).toObject();
+    const qint64 groupId = static_cast<qint64>(req.value(QStringLiteral("groupId")).toDouble());
+    const QString name = req.value(QStringLiteral("name")).toString().trimmed();
+
+    if (!DbManager::instance().isGroupAdmin(groupId, session->userId())) {
+        sendError(session, 403, QStringLiteral("只有群主或管理员可以新建文件夹"));
+        return true;
+    }
+    if (name.isEmpty() || name.contains(QRegExp(QStringLiteral("[\\\\\\\\/:*?<>|]")))) {
+        sendError(session, 400, QStringLiteral("文件夹名不合法"));
+        return true;
+    }
+
+    QString rel = req.value(QStringLiteral("path")).toString();
+    if (rel.contains(QStringLiteral("..")))
+        rel.clear();
+    const QString base = groupFolder(groupId, session->userId());
+    const QString folder = rel.isEmpty() ? base : QDir(base).filePath(rel);
+    if (!QDir(folder).mkpath(name)) {
+        sendError(session, 500, QStringLiteral("创建文件夹失败"));
+        return true;
+    }
+
+    QJsonObject data;
+    data.insert(QStringLiteral("ok"), true);
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kGroupFileMkdir);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), data);
+    session->sendFrame(reply);
+    return true;
+}
+
+bool GroupHandler::handleDeleteFile(ClientSession *session, const QJsonObject &frame)
+{
+    const QJsonObject req = frame.value(QStringLiteral("data")).toObject();
+    const qint64 groupId = static_cast<qint64>(req.value(QStringLiteral("groupId")).toDouble());
+    const QString rel = req.value(QStringLiteral("path")).toString().trimmed();
+
+    if (!DbManager::instance().isGroupAdmin(groupId, session->userId())) {
+        sendError(session, 403, QStringLiteral("只有群主或管理员可以删除"));
+        return true;
+    }
+    if (rel.isEmpty() || rel.contains(QStringLiteral(".."))) {
+        sendError(session, 400, QStringLiteral("路径不合法"));
+        return true;
+    }
+
+    const QString base = groupFolder(groupId, session->userId());
+    const QString target = QDir(base).filePath(rel);
+
+    bool ok = false;
+    const QFileInfo info(target);
+    if (info.isDir())
+        ok = QDir(target).removeRecursively();
+    else if (info.exists())
+        ok = QFile::remove(target);
+
+    QJsonObject data;
+    data.insert(QStringLiteral("ok"), ok);
+    data.insert(QStringLiteral("msg"), ok ? QStringLiteral("已删除")
+                                          : QStringLiteral("删除失败（文件不存在？）"));
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kGroupFileDeleteResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), data);
+    session->sendFrame(reply);
+    return true;
+}
+bool GroupHandler::handleDownload(ClientSession *session, const QJsonObject &frame)
+{
+    const QJsonObject req = frame.value(QStringLiteral("data")).toObject();
+    const qint64 groupId = static_cast<qint64>(req.value(QStringLiteral("groupId")).toDouble());
+    const QString rel = req.value(QStringLiteral("path")).toString().trimmed();
+
+    if (!DbManager::instance().isGroupMember(groupId, session->userId())) {
+        sendError(session, 403, QStringLiteral("你不在该群中"));
+        return true;
+    }
+    if (rel.isEmpty() || rel.contains(QStringLiteral(".."))) {
+        sendError(session, 400, QStringLiteral("路径不合法"));
+        return true;
+    }
+
+    const QString base = groupFolder(groupId, session->userId());
+    const QString target = QDir(base).filePath(rel);
+    QFile file(target);
+    if (!file.open(QIODevice::ReadOnly)) {
+        sendError(session, 404, QStringLiteral("文件不存在"));
+        return true;
+    }
+
+    qInfo().noquote() << QStringLiteral("[files] download start %1 (%2 bytes)").arg(rel).arg(file.size());
+    const QString fileId = QString::number(QDateTime::currentMSecsSinceEpoch());
+    const qint64 total = file.size();
+    const QByteArray all = file.readAll();
+    file.close();
+
+    const int chunkSize = 64 * 1024;
+    const int totalChunks = qMax(1, static_cast<int>((all.size() + chunkSize - 1) / chunkSize));
+    for (int i = 0; i < totalChunks; ++i) {
+        QByteArray piece = all.mid(i * chunkSize, chunkSize);
+        QJsonObject data;
+        data.insert(QStringLiteral("fileId"), fileId);
+        data.insert(QStringLiteral("seq"), i);
+        data.insert(QStringLiteral("total"), totalChunks);
+        data.insert(QStringLiteral("chunkBase64"), QString::fromLatin1(piece.toBase64()));
+
+        QJsonObject reply;
+        reply.insert(QStringLiteral("type"), MsgType::kGroupFileChunk);
+        reply.insert(QStringLiteral("ts"), nowMs());
+        reply.insert(QStringLiteral("data"), data);
+        session->sendFrame(reply);
+    }
+
+    QJsonObject doneData;
+    doneData.insert(QStringLiteral("fileId"), fileId);
+    doneData.insert(QStringLiteral("fileName"), QFileInfo(target).fileName());
+    doneData.insert(QStringLiteral("size"), static_cast<double>(total));
+
+    QJsonObject doneFrame;
+    doneFrame.insert(QStringLiteral("type"), MsgType::kGroupFileDownloadDone);
+    doneFrame.insert(QStringLiteral("ts"), nowMs());
+    doneFrame.insert(QStringLiteral("data"), doneData);
+    session->sendFrame(doneFrame);
     return true;
 }

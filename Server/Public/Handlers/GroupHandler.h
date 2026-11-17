@@ -28,6 +28,10 @@ private:
     bool handleTransfer(ClientSession *session, const QJsonObject &frame);
     bool handleDissolve(ClientSession *session, const QJsonObject &frame);
     bool handleAvatarGet(ClientSession *session, const QJsonObject &frame);
+    bool handleFilesList(ClientSession *session, const QJsonObject &frame);
+    bool handleMkdir(ClientSession *session, const QJsonObject &frame);
+    bool handleDeleteFile(ClientSession *session, const QJsonObject &frame);
+    bool handleDownload(ClientSession *session, const QJsonObject &frame);
 
     void sendGroupInfo(ClientSession *session, qint64 groupId, bool ok, const QString &msg);
     void pushGroupListTo(quint64 userId);

@@ -10,6 +10,7 @@ class QLineEdit;
 class QProgressBar;
 class QPushButton;
 class QScrollArea;
+class QToolButton;
 class QVBoxLayout;
 
 // 聊天页：群聊与私聊共用，只负责显示和输入；发送意图交给 MainWindow 组帧
@@ -28,6 +29,8 @@ public:
     void setAvatar(quint64 userId, const QByteArray &imageBytes);
     void clearAvatarCache();
     void setStatusText(const QString &text);
+    void setGroupAvatar(const QByteArray &imageBytes);   // 标题栏群头像
+    void setMemberCount(int count);                    // 标题栏"N 人"
     void appendVoiceMessage(const QString &nickname, const QString &timeText,
                             const QString &filePath, int durationMs, bool self);
     void setVoiceButtonText(const QString &text);
@@ -42,6 +45,10 @@ signals:
     void fileSendRequested();
     void voiceRecordRequested();
     void avatarContextMenuRequested(quint64 userId, const QPoint &globalPos);
+    void groupInfoRequested();          // 点群聊标题栏的"群资料"图标
+    void groupActivityRequested();      // 点群聊标题栏的"群活动"图标
+    void groupInviteRequested();        // 点群聊标题栏的"邀请成员"图标
+    void groupFilesRequested();         // 点群聊标题栏的"共享文件夹"图标
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -61,8 +68,14 @@ private:
     QPushButton *m_sendButton = nullptr;
     QPushButton *m_fileButton = nullptr;
     QPushButton *m_voiceButton = nullptr;
+    QToolButton *m_groupInfoButton = nullptr;
+    QToolButton *m_groupActivityButton = nullptr;
+    QToolButton *m_groupInviteButton = nullptr;
+    QToolButton *m_groupFilesButton = nullptr;
     QProgressBar *m_progress = nullptr;
     QLabel *m_titleLabel = nullptr;
+    QLabel *m_subtitleLabel = nullptr;
+    QLabel *m_groupAvatarLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
 
     QHash<quint64, QList<QLabel *>> m_avatarLabels;

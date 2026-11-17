@@ -22,6 +22,7 @@
 #include <QtDebug>
 
 #include "Core/Recorder.h"
+#include "Core/SoundPlayer.h"
 #include "LunaProtocol/LunaConstants.h"
 #include "LunaProtocol/MessageTypes.h"
 #include "Network/LunaClient.h"
@@ -30,12 +31,15 @@
 #include <QImage>
 #include <QPainter>
 #include <QPainterPath>
+#include <QSettings>
 #include <QStackedWidget>
-#include "UI/Widgets/ActivityDialog.h"
-#include "UI/Widgets/GroupInfoDialog.h"
-#include "UI/Widgets/MatchDialog.h"
-#include "UI/Widgets/MomentDialog.h"
-#include "UI/Widgets/SettingsDialog.h"
+#include "UI/Pages/ActivityPage.h"
+#include "UI/Pages/GroupFilesPage.h"
+#include "UI/Pages/GroupInfoPage.h"
+#include "UI/Widgets/IconRail.h"
+#include "UI/Pages/MatchPage.h"
+#include "UI/Pages/MomentPage.h"
+#include "UI/Pages/SettingsPage.h"
 #include <QApplication>
 #include "Core/AppSettings.h"
 
@@ -52,6 +56,7 @@ QString nowTimeText()
 }
 
 static QIcon roundedIcon(const QByteArray &bytes, int side);   // 前置声明，供 onFrameReceived 使用
+namespace { QJsonObject makeFrame(const QString &type, const QJsonObject &data); }   // 定义在文件末尾
 
 MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickname, QWidget *parent)
     : QMainWindow(parent), m_client(client), m_userId(userId), m_nickname(nickname)
@@ -59,14 +64,18 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
     setWindowTitle(QStringLiteral("LunaChat 月之音 - %1").arg(nickname));
     resize(1000, 660);
 
-    m_newGroupButton = new QPushButton(QStringLiteral("＋ 新建群组"), this);
-    m_activityButton = new QPushButton(QStringLiteral("群活动"), this);
-    m_momentButton = new QPushButton(QStringLiteral("朋友圈"), this);
-    m_matchButton = new QPushButton(QStringLiteral("随机匹配"), this);
-    m_settingsButton = new QPushButton(QStringLiteral("设置"), this);
-    m_profileButton = new QPushButton(QStringLiteral("个人资料"), this);
-    m_addFriendButton = new QPushButton(QStringLiteral("加好友"), this);
-    m_groupInfoButton = new QPushButton(QStringLiteral("群资料"), this);
+    m_newGroupButton = new QPushButton(this);
+    m_newGroupButton->setIcon(QIcon(QStringLiteral(":/icons/group_new.png")));
+    m_newGroupButton->setIconSize(QSize(24, 24));
+    m_newGroupButton->setFixedSize(40, 40);
+    m_newGroupButton->setToolTip(QStringLiteral("新建群组"));
+    m_newGroupButton->setCursor(Qt::PointingHandCursor);
+    m_addFriendButton = new QPushButton(this);
+    m_addFriendButton->setIcon(QIcon(QStringLiteral(":/icons/friend_add.png")));
+    m_addFriendButton->setIconSize(QSize(24, 24));
+    m_addFriendButton->setFixedSize(40, 40);
+    m_addFriendButton->setToolTip(QStringLiteral("加好友"));
+    m_addFriendButton->setCursor(Qt::PointingHandCursor);
     m_sessionList = new QListWidget(this);
     m_sessionList->setFixedWidth(220);
     m_sessionList->setObjectName(QStringLiteral("ChannelList"));
@@ -75,68 +84,128 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
     auto *leftPanel = new QWidget(this);
     leftPanel->setObjectName(QStringLiteral("Sidebar"));
     auto *leftLayout = new QVBoxLayout(leftPanel);
-    leftLayout->setContentsMargins(6, 8, 6, 8);
     leftLayout->setSpacing(6);
     leftLayout->setContentsMargins(0, 0, 0, 0);
-    // ===== 群聊工具区 =====
+
+    // ===== 群聊工具区：新建群组 + 加好友 放一起 =====
     auto *groupLabel = new QLabel(QStringLiteral("群聊工具"), this);
     groupLabel->setObjectName(QStringLiteral("SectionLabel"));
 
-    m_inviteButton = new QPushButton(QStringLiteral("邀请成员"), this);
-    m_leaveButton = new QPushButton(QStringLiteral("退出群聊"), this);
+    auto *groupRow = new QHBoxLayout;
+    groupRow->setSpacing(6);
+    groupRow->addWidget(m_newGroupButton);
+    groupRow->addWidget(m_addFriendButton);
+    groupRow->addStretch();
 
-    auto *groupRow1 = new QHBoxLayout;
-    groupRow1->addWidget(m_newGroupButton);
-    groupRow1->addWidget(m_groupInfoButton);
-
-    auto *groupRow2 = new QHBoxLayout;
-    groupRow2->addWidget(m_inviteButton);
-    groupRow2->addWidget(m_leaveButton);
-
-    // ===== 其他功能 =====
-    auto *otherLabel = new QLabel(QStringLiteral("其他功能"), this);
-    otherLabel->setObjectName(QStringLiteral("SectionLabel"));
-
-    auto *otherRow1 = new QHBoxLayout;
-    otherRow1->addWidget(m_momentButton);
-    otherRow1->addWidget(m_matchButton);
-    otherRow1->addWidget(m_settingsButton);
-
-    auto *otherRow2 = new QHBoxLayout;
-    otherRow2->addWidget(m_profileButton);
-    otherRow2->addWidget(m_addFriendButton);
-    otherRow2->addWidget(m_activityButton);
-
-    for (QPushButton *button : { m_newGroupButton, m_activityButton, m_profileButton,
-                                 m_addFriendButton, m_groupInfoButton, m_momentButton,
-                                 m_matchButton, m_settingsButton, m_inviteButton, m_leaveButton })
+    for (QPushButton *button : { m_newGroupButton, m_addFriendButton })
         button->setObjectName(QStringLiteral("SidebarButton"));
 
     leftLayout->addWidget(groupLabel);
-    leftLayout->addLayout(groupRow1);
-    leftLayout->addLayout(groupRow2);
-    leftLayout->addWidget(otherLabel);
-    leftLayout->addLayout(otherRow1);
-    leftLayout->addLayout(otherRow2);
+    leftLayout->addLayout(groupRow);
 
-    connect(m_inviteButton, &QPushButton::clicked, this, &MainWindow::onInviteMember);
-    connect(m_leaveButton, &QPushButton::clicked, this, &MainWindow::onLeaveGroup);
+    // 最左侧图标栏：只负责"切主界面"，不放具体操作
+    m_rail = new IconRail(this);
+    m_rail->addIconItem(QStringLiteral("chat"), QStringLiteral(":/icons/chat.png"), QStringLiteral("聊天"));
+    m_rail->addIconItem(QStringLiteral("moments"), QStringLiteral(":/icons/moments.png"), QStringLiteral("朋友圈"));
+    m_rail->addIconItem(QStringLiteral("match"), QStringLiteral(":/icons/match.png"), QStringLiteral("随机匹配"));
+    m_rail->addIconItem(QStringLiteral("profile"), QStringLiteral(":/icons/profile.png"), QStringLiteral("个人资料"));
+    m_rail->addIconItem(QStringLiteral("settings"), QStringLiteral(":/icons/settings.png"), QStringLiteral("设置"));
+    m_rail->setCurrent(QStringLiteral("chat"));
+
+    connect(m_rail, &IconRail::currentChanged, this, [this](const QString &id) {
+        if (id == QStringLiteral("moments")) {
+            m_mainStack->setCurrentWidget(m_momentPage);
+            m_momentPage->refresh();
+            return;
+        }
+
+        if (id == QStringLiteral("settings")) {
+            m_mainStack->setCurrentWidget(m_settingsPage);
+            return;
+        }
+
+        // 其它页面都建立在"正常界面"上（设置页会盖住左栏）
+        m_mainStack->setCurrentWidget(m_mainStack->widget(0));
+        if (id == QStringLiteral("chat")) {
+            m_stack->setCurrentWidget(m_chatPage);
+        } else if (id == QStringLiteral("moments")) {
+            onOpenMoments();
+        } else if (id == QStringLiteral("match")) {
+            onOpenMatch();
+        } else if (id == QStringLiteral("profile")) {
+            onOpenProfile();
+        }
+    });
+
 
     leftLayout->addWidget(m_sessionList, 1);
 
+
     m_chatPage = new ChatPage(this);
     m_profilePage = new ProfilePage(m_client, m_userId, this);
+    m_momentPage = new MomentPage(m_client, m_userId, m_nickname, this);
+    m_activityPage = new ActivityPage(m_client, m_userId, this);
+    m_matchPage = new MatchPage(m_client, m_userId, m_nickname, this);
 
     // 右侧用 QStackedWidget 承载"页面"：聊天 / 个人资料（以后朋友圈等也放这里）
     m_stack = new QStackedWidget(this);
     m_stack->addWidget(m_chatPage);
-    m_stack->addWidget(m_profilePage);
+    m_stack->addWidget(m_activityPage);
+
+    // 群资料页面（内嵌）：退群/解散后自动回到聊天并刷新群列表
+    m_groupInfoPage = new GroupInfoPage(m_client, m_userId, this);
+    m_stack->addWidget(m_groupInfoPage);
+    connect(m_groupInfoPage, &GroupInfoPage::closed, this, [this]() {
+        m_stack->setCurrentWidget(m_chatPage);
+        refreshGroupList();
+    });
 
     auto *splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(leftPanel);
     splitter->addWidget(m_stack);
     splitter->setStretchFactor(1, 1);
-    setCentralWidget(splitter);
+
+    // 最左侧图标栏 + 可拖动的左右分栏
+    // 主区域栈：0 = 正常界面（左栏 + 聊天），1 = 设置页（盖住左栏与聊天）
+    m_mainStack = new QStackedWidget(this);
+    m_mainStack->addWidget(splitter);
+    m_settingsPage = new SettingsPage(this);
+    m_mainStack->addWidget(m_settingsPage);
+    m_mainStack->addWidget(m_profilePage);   // 个人资料也整页覆盖
+    m_mainStack->addWidget(m_matchPage);     // 随机匹配也整页覆盖
+    m_mainStack->addWidget(m_momentPage);   // 朋友圈也占满右侧整块（盖住左栏）
+
+    m_groupFilesPage = new GroupFilesPage(m_client, m_userId, this);
+    m_mainStack->addWidget(m_groupFilesPage);
+    connect(m_groupFilesPage, &GroupFilesPage::uploadRequested, this, &MainWindow::onUploadToFolder);
+    connect(m_groupFilesPage, &GroupFilesPage::backRequested, this, [this]() {
+        m_mainStack->setCurrentWidget(m_mainStack->widget(0));
+        m_stack->setCurrentWidget(m_chatPage);
+        m_rail->setCurrent(QStringLiteral("chat"));
+    });
+    connect(m_settingsPage, &SettingsPage::backRequested, this, [this]() {
+        m_mainStack->setCurrentWidget(m_mainStack->widget(0));
+        m_stack->setCurrentWidget(m_chatPage);      // 保存/返回后回到聊天
+        m_rail->setCurrent(QStringLiteral("chat"));
+    });
+
+    auto *central = new QWidget(this);
+    auto *centralLayout = new QHBoxLayout(central);
+    centralLayout->setContentsMargins(0, 0, 0, 0);
+    centralLayout->setSpacing(0);
+    centralLayout->addWidget(m_rail);
+    centralLayout->addWidget(m_mainStack, 1);
+    setCentralWidget(central);
+
+    // 页面顶部返回箭头：回到聊天（并把左侧图标栏复位）
+    connect(m_groupInfoPage, &GroupInfoPage::backRequested, this, [this]() {
+        m_stack->setCurrentWidget(m_chatPage);
+        m_rail->setCurrent(QStringLiteral("chat"));
+    });
+    connect(m_activityPage, &ActivityPage::backRequested, this, [this]() {
+        m_stack->setCurrentWidget(m_chatPage);
+        m_rail->setCurrent(QStringLiteral("chat"));
+    });
 
     m_recorder = new Recorder(this);
     connect(m_recorder, &Recorder::levelChanged, this, [this](qreal level) {
@@ -154,6 +223,10 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
     connect(m_chatPage, &ChatPage::sendRequested, this, &MainWindow::onSendRequested);
     connect(m_chatPage, &ChatPage::fileSendRequested, this, &MainWindow::onFileSendRequested);
     connect(m_chatPage, &ChatPage::voiceRecordRequested, this, &MainWindow::onVoiceRecordRequested);
+    connect(m_chatPage, &ChatPage::groupInfoRequested, this, &MainWindow::onOpenGroupInfo);
+    connect(m_chatPage, &ChatPage::groupActivityRequested, this, &MainWindow::onOpenActivities);
+    connect(m_chatPage, &ChatPage::groupInviteRequested, this, &MainWindow::onInviteMember);
+    connect(m_chatPage, &ChatPage::groupFilesRequested, this, &MainWindow::onOpenGroupFiles);
     connect(m_chatPage, &ChatPage::avatarContextMenuRequested, this,
             [this](quint64 userId, const QPoint &globalPos) {
                 if (userId == 0 || userId == m_userId)
@@ -200,13 +273,7 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
                 }
             });
     connect(m_newGroupButton, &QPushButton::clicked, this, &MainWindow::onCreateGroup);
-    connect(m_activityButton, &QPushButton::clicked, this, &MainWindow::onOpenActivities);
-    connect(m_momentButton, &QPushButton::clicked, this, &MainWindow::onOpenMoments);
-    connect(m_matchButton, &QPushButton::clicked, this, &MainWindow::onOpenMatch);
-    connect(m_settingsButton, &QPushButton::clicked, this, &MainWindow::onOpenSettings);
-    connect(m_profileButton, &QPushButton::clicked, this, &MainWindow::onOpenProfile);
     connect(m_addFriendButton, &QPushButton::clicked, this, &MainWindow::onAddFriend);
-    connect(m_groupInfoButton, &QPushButton::clicked, this, &MainWindow::onOpenGroupInfo);
     connect(m_profilePage, &ProfilePage::nicknameChanged, this, [this](const QString &nickname) {
         m_nickname = nickname;
         setWindowTitle(QStringLiteral("LunaChat 月之音 - %1").arg(nickname));
@@ -259,6 +326,7 @@ void MainWindow::onSessionItemChanged()
 
 void MainWindow::selectConversation(const QString &key)
 {
+    m_rail->setCurrent(QStringLiteral("chat"));   // 选会话即回到聊天界面
     if (key.isEmpty() || key == m_currentKey)
         return;
 
@@ -273,6 +341,12 @@ void MainWindow::selectConversation(const QString &key)
         if (title.isEmpty())
             title = QStringLiteral("群 %1").arg(groupId);
         m_chatPage->openGroup(groupId, title);
+
+        // 标题栏需要人数和群头像：打开会话时各拉一次
+        QJsonObject infoReq;
+        infoReq.insert(QStringLiteral("groupId"), static_cast<double>(groupId));
+        m_client->sendFrame(makeFrame(MsgType::kGroupInfoGet, infoReq));
+        m_client->sendFrame(makeFrame(MsgType::kGroupAvatarGet, infoReq));
     } else {
         const quint64 peerId = key.mid(1).toULongLong();
         QString nickname = m_users.value(peerId);
@@ -352,28 +426,110 @@ void MainWindow::onCreateGroup()
 
 void MainWindow::onOpenActivities()
 {
-    if (!m_currentKey.startsWith(QLatin1Char('g'))) {
+    // m_currentKey 可能为空（启动后直接点图标），退回聊天页当前群
+    const qint64 groupId = currentGroupId();
+    if (groupId <= 0) {
         appendSystemLine(QStringLiteral("请先在左侧选择一个群组"));
         return;
     }
-
-    const qint64 groupId = m_currentKey.mid(1).toLongLong();
     const QString role = m_groupRole.value(groupId);
-    const bool canManage = (role == QStringLiteral("owner") || role == QStringLiteral("admin"));
+    m_activityPage->setGroup(groupId, role == QStringLiteral("owner") || role == QStringLiteral("admin"));
+    m_stack->setCurrentWidget(m_activityPage);
+}
 
-    ActivityDialog dialog(m_client, groupId, m_userId, canManage, this);
-    dialog.exec();
+qint64 MainWindow::currentGroupId() const
+{
+    if (m_currentKey.startsWith(QLatin1Char('g')))
+        return m_currentKey.mid(1).toLongLong();
+    if (m_chatPage->groupId() > 0)
+        return static_cast<qint64>(m_chatPage->groupId());
+    // 兜底：还没选会话时用列表里的第一个群，避免点了图标没反应
+    if (!m_groups.isEmpty())
+        return m_groups.constBegin().key();
+    return 0;
+}
+
+void MainWindow::playSound(const QString &fileName)
+{
+    // 具体播放逻辑收敛到 Core/SoundPlayer.h；这里保留同名方法，历史调用点不用改
+    SoundPlayer::play(fileName);
+}
+
+void MainWindow::onUploadToFolder()
+{
+    if (!m_groupFilesPage || m_groupFilesPage->groupId() <= 0) {
+        appendSystemLine(QStringLiteral("请先从群聊进入共享文件夹"));
+        return;
+    }
+
+    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择要上传的文件"));
+    if (path.isEmpty())
+        return;
+
+    QFileInfo info(path);
+    if (!info.exists() || info.size() <= 0) {
+        appendSystemLine(QStringLiteral("文件为空或不存在"));
+        return;
+    }
+
+    m_outGroup = m_groupFilesPage->groupId();
+    m_outPath = m_groupFilesPage->currentPath();
+    m_outName = info.fileName();
+    m_outTotal = info.size();
+    m_outSent = 0;
+    m_outSeq = 0;
+    m_outTarget = 0;
+    m_outFileId = QString::number(QDateTime::currentMSecsSinceEpoch());
+
+    m_outFile = new QFile(path, this);
+    if (!m_outFile->open(QIODevice::ReadOnly)) {
+        appendSystemLine(QStringLiteral("无法打开文件"));
+        m_outFile->deleteLater();
+        m_outFile = nullptr;
+        return;
+    }
+
+    QJsonObject data;
+    data.insert(QStringLiteral("fileId"), m_outFileId);
+    data.insert(QStringLiteral("fileName"), m_outName);
+    data.insert(QStringLiteral("fileSize"), static_cast<double>(m_outTotal));
+    data.insert(QStringLiteral("groupId"), static_cast<double>(m_outGroup));
+    if (!m_outPath.isEmpty())
+        data.insert(QStringLiteral("path"), m_outPath);
+
+    QJsonObject frame;
+    frame.insert(QStringLiteral("type"), MsgType::kFileMeta);
+    frame.insert(QStringLiteral("ts"), static_cast<double>(QDateTime::currentMSecsSinceEpoch()));
+    frame.insert(QStringLiteral("data"), data);
+    m_client->sendFrame(frame);
+
+    m_chatPage->showProgress(0, m_outTotal);
+    m_chatPage->setStatusText(QStringLiteral("正在上传 %1...").arg(m_outName));
+    m_chunkTimer->start();
+}
+
+void MainWindow::onOpenGroupFiles()
+{
+    const qint64 groupId = currentGroupId();
+    if (groupId <= 0) {
+        appendSystemLine(QStringLiteral("请先在左侧选择一个群组"));
+        return;
+    }
+    const QString role = m_groupRole.value(groupId);
+    m_groupFilesPage->setGroup(groupId,
+                               role == QStringLiteral("owner") || role == QStringLiteral("admin"));
+    m_mainStack->setCurrentWidget(m_groupFilesPage);
 }
 
 void MainWindow::onOpenGroupInfo()
 {
-    if (!m_currentKey.startsWith(QLatin1Char('g'))) {
+    const qint64 groupId = currentGroupId();
+    if (groupId <= 0) {
         appendSystemLine(QStringLiteral("请先在左侧选择一个群组"));
         return;
     }
-    const qint64 groupId = m_currentKey.mid(1).toLongLong();
-    GroupInfoDialog dialog(m_client, groupId, m_userId, m_groupRole.value(groupId), this);
-    dialog.exec();
+    m_groupInfoPage->setGroup(groupId, m_groupRole.value(groupId));
+    m_stack->setCurrentWidget(m_groupInfoPage);
 }
 
 void MainWindow::onInviteMember()
@@ -448,31 +604,25 @@ void MainWindow::onAddFriend()
 
 void MainWindow::onOpenProfile()
 {
-    m_stack->setCurrentWidget(m_profilePage);
+    m_mainStack->setCurrentWidget(m_profilePage);
     m_profilePage->refresh();
 }
 
 void MainWindow::onOpenSettings()
 {
-    SettingsDialog dialog(this);
-    if (dialog.exec() != QDialog::Accepted)
-        return;
-
-    // 主题即时生效：换全局样式表，不需要重启
-    qApp->setStyleSheet(AppSettings::loadStyleSheet(AppSettings::theme()));
-    appendSystemLine(QStringLiteral("设置已保存，主题已切换"));
+    m_mainStack->setCurrentWidget(m_settingsPage);
+    m_rail->setCurrent(QStringLiteral("settings"));
 }
 
 void MainWindow::onOpenMatch()
 {
-    MatchDialog dialog(m_client, m_userId, m_nickname, this);
-    dialog.exec();
+    m_mainStack->setCurrentWidget(m_matchPage);
 }
 
 void MainWindow::onOpenMoments()
 {
-    MomentDialog dialog(m_client, m_userId, m_nickname, this);
-    dialog.exec();
+    m_stack->setCurrentWidget(m_momentPage);
+    m_momentPage->refresh();
 }
 
 void MainWindow::inviteUser(qint64 groupId, quint64 targetId)
@@ -607,6 +757,15 @@ void MainWindow::sendNextChunk()
         m_outFile->close();
         m_outFile->deleteLater();
         m_outFile = nullptr;
+        if (m_outGroup > 0) {
+            // 群文件：服务端直接落盘，不会有 file_resp，这里立刻收尾
+            m_chatPage->hideProgress();
+            m_chatPage->setStatusText(QStringLiteral("已存入群共享文件夹：%1").arg(m_outName));
+            if (m_groupFilesPage)
+                m_groupFilesPage->refresh();
+            m_outGroup = 0;
+            return;
+        }
         m_chatPage->showProgress(m_outTotal, m_outTotal);
         m_chatPage->setStatusText(QStringLiteral("文件已发完，等待对方确认"));
         return;
@@ -896,6 +1055,8 @@ void MainWindow::appendToConversation(const QString &key, const MessageLine &lin
 
 void MainWindow::handleChatBroadcast(const QJsonObject &frame)
 {
+    if (AppSettings::soundEnabled(AppSettings::kSoundMessage))
+        playSound(QStringLiteral("message"));
     const QJsonObject data = frame.value(QStringLiteral("data")).toObject();
     const quint64 fromUser = static_cast<quint64>(data.value(QStringLiteral("fromUser")).toDouble());
 
@@ -996,6 +1157,17 @@ void MainWindow::onFrameReceived(const QJsonObject &frame)
         return;
     }
 
+    if (type == MsgType::kGroupInfoResp) {
+        const QJsonObject infoData = frame.value(QStringLiteral("data")).toObject();
+        if (infoData.contains(QStringLiteral("info"))) {
+            const QJsonObject info = infoData.value(QStringLiteral("info")).toObject();
+            const qint64 headerGroupId = static_cast<qint64>(info.value(QStringLiteral("groupId")).toDouble());
+            if (m_currentKey == keyOfGroup(headerGroupId))
+                m_chatPage->setMemberCount(info.value(QStringLiteral("memberCount")).toInt());
+        }
+        return;
+    }
+
     if (type == MsgType::kGroupAvatarResp) {
         const QJsonObject avatarData = frame.value(QStringLiteral("data")).toObject();
         const qint64 groupId = static_cast<qint64>(avatarData.value(QStringLiteral("groupId")).toDouble());
@@ -1007,6 +1179,9 @@ void MainWindow::onFrameReceived(const QJsonObject &frame)
                 m_groupIcons.insert(groupId, icon);
                 refreshListIcons();
             }
+            // 当前正开着这个群聊时，标题栏头像也一起刷新
+            if (m_currentKey == keyOfGroup(groupId))
+                m_chatPage->setGroupAvatar(bytes);
         }
         return;
     }
@@ -1036,11 +1211,20 @@ void MainWindow::onFrameReceived(const QJsonObject &frame)
     if (type == MsgType::kUserList) {
         const QJsonArray users = frame.value(QStringLiteral("data")).toObject()
                                       .value(QStringLiteral("users")).toArray();
+        const QList<quint64> previousUsers = m_users.keys();   // 用于"好友上线"提示音
         m_users.clear();
         for (const QJsonValue &value : users) {
             const QJsonObject item = value.toObject();
             m_users.insert(static_cast<quint64>(item.value(QStringLiteral("userId")).toDouble()),
                            item.value(QStringLiteral("nickname")).toString());
+        }
+        if (AppSettings::soundEnabled(AppSettings::kSoundOnline)) {
+            for (auto it = m_users.constBegin(); it != m_users.constEnd(); ++it) {
+                if (!previousUsers.contains(it.key()) && m_friendIds.contains(it.key())) {
+                    playSound(QStringLiteral("online"));
+                    break;
+                }
+            }
         }
         statusBar()->showMessage(QStringLiteral("在线 %1 人").arg(users.size()));
         rebuildConversationList();

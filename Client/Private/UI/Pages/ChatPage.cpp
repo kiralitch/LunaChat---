@@ -7,7 +7,9 @@
 #include <QHBoxLayout>
 #include <QImage>
 #include <QLabel>
+#include <QIcon>
 #include <QLineEdit>
+#include <QToolButton>
 #include <QPainter>
 #include <QPainterPath>
 #include <QProgressBar>
@@ -51,6 +53,28 @@ ChatPage::ChatPage(QWidget *parent)
     m_titleLabel = new QLabel(QStringLiteral("未选择会话"), this);
     m_titleLabel->setObjectName(QStringLiteral("ChatTitle"));
 
+    // 群聊专属入口：图标放在标题栏右侧（图标文件见 Client/resources/icons/README.md）
+    auto makeIconButton = [this](const QString &iconPath, const QString &tip) {
+        auto *button = new QToolButton(this);
+        button->setObjectName(QStringLiteral("ChatIconButton"));
+        button->setToolTip(tip);
+        button->setIcon(QIcon(iconPath));
+        button->setIconSize(QSize(26, 26));
+        button->setFixedSize(40, 40);
+        button->setAutoRaise(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setVisible(false);
+        return button;
+    };
+    m_groupInfoButton = makeIconButton(QStringLiteral(":/icons/group_info.png"), QStringLiteral("群资料"));
+    m_groupActivityButton = makeIconButton(QStringLiteral(":/icons/group_activity.png"), QStringLiteral("群活动"));
+    m_groupInviteButton = makeIconButton(QStringLiteral(":/icons/group_invite.png"), QStringLiteral("邀请成员"));
+    m_groupFilesButton = makeIconButton(QStringLiteral(":/icons/folder.png"), QStringLiteral("共享文件夹"));
+    connect(m_groupInfoButton, &QToolButton::clicked, this, &ChatPage::groupInfoRequested);
+    connect(m_groupActivityButton, &QToolButton::clicked, this, &ChatPage::groupActivityRequested);
+    connect(m_groupInviteButton, &QToolButton::clicked, this, &ChatPage::groupInviteRequested);
+    connect(m_groupFilesButton, &QToolButton::clicked, this, &ChatPage::groupFilesRequested);
+
     // 消息区用「滚动区 + 纵向布局」而不是 QListWidget：
     // 气泡高度随内容变化，用 setItemWidget 很容易被 item 高度截断
     m_scroll = new QScrollArea(this);
@@ -88,7 +112,31 @@ ChatPage::ChatPage(QWidget *parent)
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(6);
-    layout->addWidget(m_titleLabel);
+    // 标题栏：群头像 + 群名/N 人 + 右侧两个图标
+    m_groupAvatarLabel = new QLabel(this);
+    m_groupAvatarLabel->setFixedSize(30, 30);
+    m_groupAvatarLabel->setObjectName(QStringLiteral("ChatHeaderAvatar"));
+    m_groupAvatarLabel->setAlignment(Qt::AlignCenter);
+
+    m_subtitleLabel = new QLabel(this);
+    m_subtitleLabel->setObjectName(QStringLiteral("ChatSubtitle"));
+
+    auto *titleBox = new QVBoxLayout;
+    titleBox->setContentsMargins(0, 0, 0, 0);
+    titleBox->setSpacing(0);
+    titleBox->addWidget(m_titleLabel);
+    titleBox->addWidget(m_subtitleLabel);
+
+    auto *headerRow = new QHBoxLayout;
+    headerRow->setContentsMargins(0, 0, 0, 0);
+    headerRow->setSpacing(8);
+    headerRow->addWidget(m_groupAvatarLabel, 0, Qt::AlignVCenter);
+    headerRow->addLayout(titleBox, 1);
+    headerRow->addWidget(m_groupInfoButton);
+    headerRow->addWidget(m_groupActivityButton);
+    headerRow->addWidget(m_groupInviteButton);
+    headerRow->addWidget(m_groupFilesButton);
+    layout->addLayout(headerRow);
     layout->addWidget(m_scroll, 1);
     layout->addWidget(m_progress);
     layout->addWidget(m_statusLabel);
@@ -118,6 +166,14 @@ void ChatPage::openGroup(qint64 groupId, const QString &title)
     m_groupId = groupId;
     m_peerId = 0;
     m_titleLabel->setText(title);
+    m_groupInfoButton->setVisible(true);
+    m_groupActivityButton->setVisible(true);
+    m_groupInviteButton->setVisible(true);
+    m_groupFilesButton->setVisible(true);
+    m_groupAvatarLabel->setVisible(true);
+    m_subtitleLabel->setVisible(true);
+    m_groupAvatarLabel->setText(title.left(1));
+    m_subtitleLabel->setText(QStringLiteral("群聊"));
     m_input->setEnabled(true);
     m_sendButton->setEnabled(true);
     m_input->setFocus();
@@ -128,6 +184,12 @@ void ChatPage::openPrivate(quint64 peerId, const QString &nickname)
     m_groupId = 0;
     m_peerId = peerId;
     m_titleLabel->setText(QStringLiteral("与 %1 的私聊").arg(nickname));
+    m_groupInfoButton->setVisible(false);
+    m_groupActivityButton->setVisible(false);
+    m_groupInviteButton->setVisible(false);
+    m_groupFilesButton->setVisible(false);
+    m_groupAvatarLabel->setVisible(false);
+    m_subtitleLabel->setVisible(false);
     m_input->setEnabled(true);
     m_sendButton->setEnabled(true);
     m_input->setFocus();
@@ -262,6 +324,20 @@ void ChatPage::appendVoiceMessage(const QString &nickname, const QString &timeTe
     layout->addWidget(voice);
 
     addRow(row);
+}
+
+void ChatPage::setGroupAvatar(const QByteArray &imageBytes)
+{
+    const QPixmap pixmap = circularPixmap(imageBytes, 30);
+    if (pixmap.isNull())
+        return;
+    m_groupAvatarLabel->setPixmap(pixmap);
+    m_groupAvatarLabel->setText(QString());
+}
+
+void ChatPage::setMemberCount(int count)
+{
+    m_subtitleLabel->setText(QStringLiteral("%1 人").arg(count));
 }
 
 void ChatPage::setStatusText(const QString &text)

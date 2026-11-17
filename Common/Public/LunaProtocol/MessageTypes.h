@@ -92,6 +92,11 @@ inline const QString kVoiceResp  = QStringLiteral("voice_resp");
 // 阶段1 自检专用：冒充登录上报昵称；阶段2 起由 login 取代
 inline const QString kHello = QStringLiteral("hello");
 
+// 阶段11：朋友圈背景（按用户存服务端）
+inline const QString kMomentBgGet    = QStringLiteral("moment_bg_get");
+inline const QString kMomentBgResp   = QStringLiteral("moment_bg_resp");
+inline const QString kMomentBgUpdate = QStringLiteral("moment_bg_update");
+
 // 阶段11 新增登记：群资料与群生命周期
 inline const QString kGroupInfoGet    = QStringLiteral("group_info_get");
 inline const QString kGroupInfoResp   = QStringLiteral("group_info_resp");
@@ -99,6 +104,15 @@ inline const QString kGroupInfoUpdate = QStringLiteral("group_info_update");
 inline const QString kGroupLeave      = QStringLiteral("group_leave");
 inline const QString kGroupTransfer   = QStringLiteral("group_transfer");
 inline const QString kGroupDissolve   = QStringLiteral("group_dissolve");
+// 阶段11：群共享文件夹
+inline const QString kGroupFilesList    = QStringLiteral("group_files_list");
+inline const QString kGroupFilesResp    = QStringLiteral("group_files_resp");
+inline const QString kGroupFileMkdir    = QStringLiteral("group_file_mkdir");
+inline const QString kGroupFileDelete  = QStringLiteral("group_file_delete");
+inline const QString kGroupFileDeleteResp = QStringLiteral("group_file_delete_resp");
+inline const QString kGroupFileDownload   = QStringLiteral("group_file_download");
+inline const QString kGroupFileChunk      = QStringLiteral("group_file_chunk");
+inline const QString kGroupFileDownloadDone = QStringLiteral("group_file_download_done");
 inline const QString kGroupAvatarGet  = QStringLiteral("group_avatar_get");
 inline const QString kGroupAvatarResp = QStringLiteral("group_avatar_resp");
 

@@ -3,4 +3,21 @@
     <file alias="theme_dark.qss">qss/theme_dark.qss</file>
     <file alias="theme_light.qss">qss/theme_light.qss</file>
   </qresource>
+  <qresource prefix="/icons">
+    <file alias="group_info.png">icons/group_info.png</file>
+    <file alias="group_activity.png">icons/group_activity.png</file>
+    <file alias="back.png">icons/back.png</file>
+    <file alias="file.png">icons/file.png</file>
+    <file alias="search.png">icons/search.png</file>
+    <file alias="folder_add.png">icons/folder_add.png</file>
+    <file alias="folder.png">icons/folder.png</file>
+    <file alias="profile.png">icons/profile.png</file>
+    <file alias="match.png">icons/match.png</file>
+    <file alias="moments.png">icons/moments.png</file>
+    <file alias="chat.png">icons/chat.png</file>
+    <file alias="settings.png">icons/settings.png</file>
+    <file alias="friend_add.png">icons/friend_add.png</file>
+    <file alias="group_new.png">icons/group_new.png</file>
+    <file alias="group_invite.png">icons/group_invite.png</file>
+  </qresource>
 </RCC>

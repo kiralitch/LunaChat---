@@ -38,6 +38,10 @@ private slots:
     void onOpenProfile();
     void onAddFriend();
     void onOpenGroupInfo();
+    void onOpenGroupFiles();
+    void playSound(const QString &fileName);
+    void onUploadToFolder();
+    qint64 currentGroupId() const;
     void onInviteMember();
     void onLeaveGroup();
     void onContextMenu(const QPoint &pos);
@@ -89,6 +93,14 @@ private:
     QPushButton *m_leaveButton = nullptr;
     class QStackedWidget *m_stack = nullptr;
     class ProfilePage *m_profilePage = nullptr;
+    class MomentPage *m_momentPage = nullptr;
+    class ActivityPage *m_activityPage = nullptr;
+    class MatchPage *m_matchPage = nullptr;
+    class GroupInfoPage *m_groupInfoPage = nullptr;
+    class GroupFilesPage *m_groupFilesPage = nullptr;
+    class IconRail *m_rail = nullptr;
+    class SettingsPage *m_settingsPage = nullptr;
+    class QStackedWidget *m_mainStack = nullptr;
 
     QString m_currentKey;                              // "g1" 群聊 / "u2" 私聊
     QHash<QString, QList<MessageLine>> m_messages;
@@ -118,6 +130,7 @@ private:
     QString m_outName;
     quint64 m_outTarget = 0;
     qint64 m_outGroup = 0;    // 非 0 表示发到群共享文件夹
+    QString m_outPath;        // 群共享文件夹内的子目录（相对路径）
     qint64 m_outTotal = 0;
     qint64 m_outSent = 0;
     int m_outSeq = 0;

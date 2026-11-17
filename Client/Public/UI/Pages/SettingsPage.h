@@ -1,22 +1,26 @@
 ﻿#pragma once
 
-#include <QDialog>
+#include <QWidget>
 
 class QAudioInput;
 class QCheckBox;
 class QComboBox;
 class QIODevice;
 class QProgressBar;
+class QPushButton;
 class QSlider;
 
-// 设置页：主题、音效开关与音量、录音设备枚举与实时电平监测
-class SettingsDialog : public QDialog
+// 设置页面（覆盖整个右侧区域：左栏 + 聊天区，只留最左侧图标栏）
+class SettingsPage : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit SettingsDialog(QWidget *parent = nullptr);
-    ~SettingsDialog() override;
+    explicit SettingsPage(QWidget *parent = nullptr);
+    ~SettingsPage() override;
+
+signals:
+    void backRequested();   // 点"返回"回到主界面
 
 private slots:
     void toggleLevelMonitor();

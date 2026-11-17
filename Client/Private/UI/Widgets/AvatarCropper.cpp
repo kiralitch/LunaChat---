@@ -8,17 +8,17 @@
 #include <QSlider>
 #include <QVBoxLayout>
 
-namespace {
-const int kViewSide = 260;
-}
-
-AvatarCropper::AvatarCropper(const QImage &image, QWidget *parent)
-    : QDialog(parent), m_image(image)
+AvatarCropper::AvatarCropper(const QImage &image, const QSize &target, QWidget *parent)
+    : QDialog(parent), m_image(image), m_target(target.isValid() ? target : QSize(256, 256))
 {
-    setWindowTitle(QStringLiteral("调整头像"));
+    // 取景框按目标比例显示（横幅是 10:3，头像 1:1）
+    m_viewW = 320;
+    m_viewH = qBound(80, m_viewW * m_target.height() / qMax(1, m_target.width()), 320);
+
+    setWindowTitle(QStringLiteral("调整图片"));
 
     m_view = new QLabel(this);
-    m_view->setFixedSize(kViewSide, kViewSide);
+    m_view->setFixedSize(m_viewW, m_viewH);
     m_view->setStyleSheet(QStringLiteral("background:#101114;"));
     m_view->setAlignment(Qt::AlignCenter);
     m_view->installEventFilter(this);
@@ -27,7 +27,8 @@ AvatarCropper::AvatarCropper(const QImage &image, QWidget *parent)
     m_zoom->setRange(100, 400);
     m_zoom->setValue(100);
 
-    auto *hint = new QLabel(QStringLiteral("拖动图片调整位置，滑杆缩放"), this);
+    auto *hint = new QLabel(QStringLiteral("拖动图片调整位置，滑杆缩放（输出 %1×%2）")
+                                .arg(m_target.width()).arg(m_target.height()), this);
     hint->setStyleSheet(QStringLiteral("color:#8b8f98;"));
 
     auto *okButton = new QPushButton(QStringLiteral("确定"), this);
@@ -49,18 +50,20 @@ AvatarCropper::AvatarCropper(const QImage &image, QWidget *parent)
     connect(okButton, &QPushButton::clicked, this, &QDialog::accept);
     connect(cancelButton, &QPushButton::clicked, this, &QDialog::reject);
 
-    m_fitScale = qMin(1.0, static_cast<double>(kViewSide) / qMax(image.width(), image.height()));
+    // 初始 100% = 整张图完整可见（contain）
+    m_fitScale = qMin(1.0, qMin(static_cast<double>(m_viewW) / qMax(1, m_image.width()),
+                               static_cast<double>(m_viewH) / qMax(1, m_image.height())));
     setScale(m_fitScale);
 }
 
 QImage AvatarCropper::result() const
 {
     const QRectF rect(-m_offset.x() / m_scale, -m_offset.y() / m_scale,
-                      kViewSide / m_scale, kViewSide / m_scale);
+                      m_viewW / m_scale, m_viewH / m_scale);
     const QRect clipped = rect.toRect().intersected(m_image.rect());
     if (clipped.isEmpty())
         return QImage();
-    return m_image.copy(clipped).scaled(256, 256, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    return m_image.copy(clipped).scaled(m_target, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 }
 
 bool AvatarCropper::eventFilter(QObject *watched, QEvent *event)
@@ -84,7 +87,7 @@ bool AvatarCropper::eventFilter(QObject *watched, QEvent *event)
 
 void AvatarCropper::setScale(double scale)
 {
-    const QPointF center = QPointF(kViewSide, kViewSide) / 2.0;
+    const QPointF center = QPointF(m_viewW, m_viewH) / 2.0;
     const QPointF imagePoint((center.x() - m_offset.x()) / m_scale,
                              (center.y() - m_offset.y()) / m_scale);
 
@@ -100,20 +103,20 @@ void AvatarCropper::clampOffset()
     const double scaledW = m_image.width() * m_scale;
     const double scaledH = m_image.height() * m_scale;
 
-    if (scaledW <= kViewSide)
-        m_offset.setX((kViewSide - scaledW) / 2.0);
+    if (scaledW <= m_viewW)
+        m_offset.setX((m_viewW - scaledW) / 2.0);
     else
-        m_offset.setX(qBound(kViewSide - scaledW, m_offset.x(), 0.0));
+        m_offset.setX(qBound(m_viewW - scaledW, m_offset.x(), 0.0));
 
-    if (scaledH <= kViewSide)
-        m_offset.setY((kViewSide - scaledH) / 2.0);
+    if (scaledH <= m_viewH)
+        m_offset.setY((m_viewH - scaledH) / 2.0);
     else
-        m_offset.setY(qBound(kViewSide - scaledH, m_offset.y(), 0.0));
+        m_offset.setY(qBound(m_viewH - scaledH, m_offset.y(), 0.0));
 }
 
 void AvatarCropper::render()
 {
-    QImage canvas(kViewSide, kViewSide, QImage::Format_ARGB32);
+    QImage canvas(m_viewW, m_viewH, QImage::Format_ARGB32);
     canvas.fill(QColor(QStringLiteral("#101114")));
 
     QPainter painter(&canvas);

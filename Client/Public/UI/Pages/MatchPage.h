@@ -1,7 +1,7 @@
 ﻿#pragma once
 
-#include <QDialog>
 #include <QJsonObject>
+#include <QWidget>
 
 class LunaClient;
 class QComboBox;
@@ -12,14 +12,14 @@ class QPushButton;
 class QPropertyAnimation;
 class QGraphicsOpacityEffect;
 
-// 随机匹配：匹配动画 + 匹配成功后的临时会话聊天
-class MatchDialog : public QDialog
+// 随机匹配页面（内嵌）：匹配动画 + 匹配成功后的临时会话
+class MatchPage : public QWidget
 {
     Q_OBJECT
 
 public:
-    MatchDialog(LunaClient *client, quint64 userId, const QString &nickname,
-                QWidget *parent = nullptr);
+    MatchPage(LunaClient *client, quint64 userId, const QString &nickname,
+              QWidget *parent = nullptr);
 
 private slots:
     void onStart();

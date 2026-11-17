@@ -1,4 +1,6 @@
 ﻿#include <QApplication>
+#include <QLibraryInfo>
+#include <QTranslator>
 #include <QtDebug>
 
 #include "LunaProtocol/LunaConstants.h"
@@ -11,6 +13,13 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+
+    // 中文标准按钮（QMessageBox / QFileDialog 等）
+    auto *translator = new QTranslator(&app);
+    if (translator->load(QStringLiteral("qt_zh_CN"),
+                         QLibraryInfo::location(QLibraryInfo::TranslationsPath))) {
+        app.installTranslator(translator);
+    }
     QCoreApplication::setOrganizationName(QStringLiteral("LunaChat"));
     QCoreApplication::setApplicationName(QStringLiteral("LunaChat"));
 

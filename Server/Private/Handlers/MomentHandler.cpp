@@ -62,7 +62,8 @@ bool MomentHandler::handle(ClientSession *session, const QJsonObject &frame)
     const QString type = frame.value(QStringLiteral("type")).toString();
     const bool mine = (type == MsgType::kMomentPublish || type == MsgType::kMomentList
                        || type == MsgType::kMomentImage || type == MsgType::kMomentLike
-                       || type == MsgType::kMomentComment || type == MsgType::kMomentDelete);
+                       || type == MsgType::kMomentComment || type == MsgType::kMomentDelete
+                       || type == MsgType::kMomentBgGet || type == MsgType::kMomentBgUpdate);
     if (!mine)
         return false;
 
@@ -81,6 +82,10 @@ bool MomentHandler::handle(ClientSession *session, const QJsonObject &frame)
         return handleLike(session, frame);
     if (type == MsgType::kMomentComment)
         return handleComment(session, frame);
+    if (type == MsgType::kMomentBgGet)
+        return handleBgGet(session, frame);
+    if (type == MsgType::kMomentBgUpdate)
+        return handleBgUpdate(session, frame);
     return handleDelete(session, frame);
 }
 
@@ -147,8 +152,27 @@ bool MomentHandler::handleList(ClientSession *session, const QJsonObject &frame)
     QJsonObject replyData;
     replyData.insert(QStringLiteral("page"), page);
     replyData.insert(QStringLiteral("pageSize"), pageSize);
-    replyData.insert(QStringLiteral("moments"),
-                     DbManager::instance().listMoments(page, pageSize, session->userId()));
+    // 只展示"自己 + 好友"的动态；带 userId 时只看这个人的（点别人头像用）
+    const quint64 filterUser = static_cast<quint64>(data.value(QStringLiteral("userId")).toDouble());
+    const QJsonArray allMoments = DbManager::instance().listMoments(page, pageSize, session->userId());
+    QJsonArray visible;
+    for (const QJsonValue &value : allMoments) {
+        const QJsonObject moment = value.toObject();
+        quint64 author = static_cast<quint64>(moment.value(QStringLiteral("userId")).toDouble());
+        if (author == 0)
+            author = static_cast<quint64>(moment.value(QStringLiteral("user_id")).toDouble());
+
+        if (filterUser > 0) {
+            if (author == filterUser)
+                visible.append(moment);
+            continue;
+        }
+        if (author == session->userId()
+            || DbManager::instance().areFriends(session->userId(), author)) {
+            visible.append(moment);
+        }
+    }
+    replyData.insert(QStringLiteral("moments"), visible);
 
     QJsonObject reply;
     reply.insert(QStringLiteral("type"), MsgType::kMomentListResp);
@@ -273,6 +297,73 @@ bool MomentHandler::handleDelete(ClientSession *session, const QJsonObject &fram
     reply.insert(QStringLiteral("type"), MsgType::kMomentDeleteResp);
     reply.insert(QStringLiteral("ts"), nowMs());
     reply.insert(QStringLiteral("data"), replyData);
+    session->sendFrame(reply);
+    return true;
+}
+// ================= 朋友圈背景（按用户存服务端） =================
+
+namespace {
+QString bgPathFor(quint64 userId)
+{
+    return QCoreApplication::applicationDirPath()
+           + QStringLiteral("/backgrounds/bg_%1.jpg").arg(userId);
+}
+}
+
+bool MomentHandler::handleBgGet(ClientSession *session, const QJsonObject &frame)
+{
+    const QJsonObject req = frame.value(QStringLiteral("data")).toObject();
+    quint64 targetId = static_cast<quint64>(req.value(QStringLiteral("userId")).toDouble());
+    if (targetId == 0)
+        targetId = session->userId();
+
+    QByteArray bytes;
+    QFile file(bgPathFor(targetId));
+    if (file.open(QIODevice::ReadOnly)) {
+        bytes = file.readAll();
+        file.close();
+    }
+
+    QJsonObject data;
+    data.insert(QStringLiteral("userId"), static_cast<double>(targetId));
+    data.insert(QStringLiteral("data"), QString::fromLatin1(bytes.toBase64()));
+
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kMomentBgResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), data);
+    session->sendFrame(reply);
+    return true;
+}
+
+bool MomentHandler::handleBgUpdate(ClientSession *session, const QJsonObject &frame)
+{
+    const QJsonObject req = frame.value(QStringLiteral("data")).toObject();
+    const QByteArray bytes = QByteArray::fromBase64(
+        req.value(QStringLiteral("data")).toString().toLatin1());
+    if (bytes.isEmpty() || bytes.size() > 500 * 1024) {
+        sendError(session, 413, QStringLiteral("背景图不能为空且不超过 500KB"));
+        return true;
+    }
+
+    const QString path = bgPathFor(session->userId());
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        sendError(session, 500, QStringLiteral("背景保存失败"));
+        return true;
+    }
+    file.write(bytes);
+    file.close();
+
+    QJsonObject data;
+    data.insert(QStringLiteral("ok"), true);
+    data.insert(QStringLiteral("userId"), static_cast<double>(session->userId()));
+
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kMomentBgResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), data);
     session->sendFrame(reply);
     return true;
 }

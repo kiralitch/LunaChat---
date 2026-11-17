@@ -1,4 +1,4 @@
-﻿#include "UI/Widgets/MatchDialog.h"
+﻿#include "UI/Pages/MatchPage.h"
 
 #include <QComboBox>
 #include <QDateTime>
@@ -12,6 +12,8 @@
 #include <QVBoxLayout>
 #include <QtDebug>
 
+#include "Core/AppSettings.h"
+#include "Core/SoundPlayer.h"
 #include "LunaProtocol/MessageTypes.h"
 #include "Network/LunaClient.h"
 
@@ -28,10 +30,10 @@ QJsonObject makeFrame(const QString &type, const QJsonObject &data)
 
 }
 
-MatchDialog::MatchDialog(LunaClient *client, quint64 userId, const QString &nickname, QWidget *parent)
-    : QDialog(parent), m_client(client), m_userId(userId), m_nickname(nickname)
+MatchPage::MatchPage(LunaClient *client, quint64 userId, const QString &nickname, QWidget *parent)
+    : QWidget(parent), m_client(client), m_userId(userId), m_nickname(nickname)
 {
-    setWindowTitle(QStringLiteral("随机匹配"));
+    setObjectName(QStringLiteral("MatchPage"));
     resize(620, 520);
 
     m_modeBox = new QComboBox(this);
@@ -46,7 +48,7 @@ MatchDialog::MatchDialog(LunaClient *client, quint64 userId, const QString &nick
     m_endButton->setEnabled(false);
     m_sendButton->setEnabled(false);
 
-    m_moonLabel = new QLabel(QStringLiteral("☾"), this);
+    m_moonLabel = new QLabel(QStringLiteral("月"), this);
     m_moonLabel->setAlignment(Qt::AlignCenter);
     m_moonLabel->setStyleSheet(QStringLiteral("font-size:56px; color:#7a6ff0;"));
 
@@ -75,12 +77,12 @@ MatchDialog::MatchDialog(LunaClient *client, quint64 userId, const QString &nick
     layout->addWidget(m_list, 1);
     layout->addLayout(inputRow);
 
-    connect(m_startButton, &QPushButton::clicked, this, &MatchDialog::onStart);
-    connect(m_cancelButton, &QPushButton::clicked, this, &MatchDialog::onCancel);
-    connect(m_endButton, &QPushButton::clicked, this, &MatchDialog::onEnd);
-    connect(m_sendButton, &QPushButton::clicked, this, &MatchDialog::onSend);
-    connect(m_input, &QLineEdit::returnPressed, this, &MatchDialog::onSend);
-    connect(m_client, &LunaClient::frameReceived, this, &MatchDialog::onFrameReceived);
+    connect(m_startButton, &QPushButton::clicked, this, &MatchPage::onStart);
+    connect(m_cancelButton, &QPushButton::clicked, this, &MatchPage::onCancel);
+    connect(m_endButton, &QPushButton::clicked, this, &MatchPage::onEnd);
+    connect(m_sendButton, &QPushButton::clicked, this, &MatchPage::onSend);
+    connect(m_input, &QLineEdit::returnPressed, this, &MatchPage::onSend);
+    connect(m_client, &LunaClient::frameReceived, this, &MatchPage::onFrameReceived);
 
     // 月相呼吸动画：QPropertyAnimation 只改透明度，不需要任何图片资源
     m_moonEffect = new QGraphicsOpacityEffect(m_moonLabel);
@@ -94,7 +96,7 @@ MatchDialog::MatchDialog(LunaClient *client, quint64 userId, const QString &nick
     m_moonAnimation->start();
 }
 
-void MatchDialog::onStart()
+void MatchPage::onStart()
 {
     QJsonObject data;
     data.insert(QStringLiteral("mode"), m_modeBox->currentData().toString());
@@ -106,7 +108,7 @@ void MatchDialog::onStart()
     m_moonAnimation->start();
 }
 
-void MatchDialog::onCancel()
+void MatchPage::onCancel()
 {
     m_client->sendFrame(makeFrame(MsgType::kMatchCancel, QJsonObject()));
     m_statusLabel->setText(QStringLiteral("已取消匹配"));
@@ -114,7 +116,7 @@ void MatchDialog::onCancel()
     m_cancelButton->setEnabled(false);
 }
 
-void MatchDialog::onEnd()
+void MatchPage::onEnd()
 {
     QJsonObject data;
     data.insert(QStringLiteral("sessionId"), m_sessionId);
@@ -123,7 +125,7 @@ void MatchDialog::onEnd()
     resetSession();
 }
 
-void MatchDialog::onSend()
+void MatchPage::onSend()
 {
     const QString text = m_input->text().trimmed();
     if (text.isEmpty() || m_sessionId.isEmpty())
@@ -136,7 +138,7 @@ void MatchDialog::onSend()
     m_input->clear();
 }
 
-void MatchDialog::appendLine(const QString &text, bool self)
+void MatchPage::appendLine(const QString &text, bool self)
 {
     QListWidgetItem *item = new QListWidgetItem(m_list);
     item->setText(text);
@@ -144,7 +146,7 @@ void MatchDialog::appendLine(const QString &text, bool self)
     m_list->scrollToBottom();
 }
 
-void MatchDialog::resetSession()
+void MatchPage::resetSession()
 {
     m_sessionId.clear();
     m_peerId = 0;
@@ -156,7 +158,7 @@ void MatchDialog::resetSession()
     m_cancelButton->setEnabled(false);
 }
 
-void MatchDialog::onFrameReceived(const QJsonObject &frame)
+void MatchPage::onFrameReceived(const QJsonObject &frame)
 {
     const QString type = frame.value(QStringLiteral("type")).toString();
     const QJsonObject data = frame.value(QStringLiteral("data")).toObject();
@@ -178,6 +180,10 @@ void MatchDialog::onFrameReceived(const QJsonObject &frame)
         m_startButton->setEnabled(false);
         m_cancelButton->setEnabled(false);
         m_moonAnimation->stop();
+
+        // 匹配成功：会话已建立，响一声（开关 + 音量的取值逻辑都在 SoundPlayer 里）
+        if (AppSettings::soundEnabled(AppSettings::kSoundMatch))
+            SoundPlayer::play(QStringLiteral("match"));
         return;
     }
 

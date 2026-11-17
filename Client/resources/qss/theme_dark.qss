@@ -143,3 +143,52 @@ QScrollBar:horizontal { background: transparent; height: 10px; }
 QScrollBar::handle:horizontal { background: #0b0c0d; border-radius: 5px; min-width: 30px; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QLabel#SectionLabel { color: #8b8f98; font-size: 11px; font-weight: 700; padding: 6px 4px 2px 4px; }
+
+/* 最左侧图标栏（Discord 风格） */
+QWidget#IconRail { background-color: #0f1012; border-right: 1px solid #0b0c0e; }
+QToolButton#RailButton {
+    border: none;
+    border-radius: 22px;
+    background-color: #23252a;
+    color: #c9ccd3;
+    font-size: 18px;
+    font-weight: 700;
+}
+QToolButton#RailButton:hover { background-color: #2f323a; color: #ffffff; }
+QToolButton#RailButton:checked { background-color: transparent; color: #ffffff; }
+QLabel#ChatHeaderAvatar { background: #5865f2; color: #ffffff; border-radius: 15px; font-weight: 700; }
+QLabel#ChatSubtitle { color: #8b8f98; font-size: 11px; }
+
+QLabel#GroupAvatarBig { background: #5865f2; color: #ffffff; border-radius: 42px; font-size: 30px; font-weight: 700; }
+
+QWidget#RailHighlight { background-color: #5865f2; border-radius: 22px; }
+
+QWidget#MomentBanner { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #5865f2, stop:1 #9b5cf6); }
+QLabel#MomentBannerName { color: #ffffff; font-size: 18px; font-weight: 700; }
+QLabel#MomentBannerHint { color: #e6e8ff; font-size: 11px; }
+QLabel#MomentBannerAvatar { background: #ffffff; color: #5865f2; border-radius: 32px; font-size: 24px; font-weight: 700; }
+
+/* 朋友圈：整页渐变背景，卡片 80% 不透明，文字底全透明 */
+QWidget#MomentPage {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2b2e4a, stop:0.5 #3a2f52, stop:1 #1f2130);
+}
+QScrollArea#MomentScroll, QWidget#MomentViewport, QWidget#MomentContainer { background: transparent; border: none; }
+QFrame#MomentCard {
+    background-color: rgba(46, 49, 58, 205);
+    border: 1px solid rgba(255, 255, 255, 28);
+    border-radius: 10px;
+}
+QLabel#MomentComments {
+    background-color: rgba(255, 255, 255, 18);
+    border-radius: 6px;
+    padding: 6px 8px;
+    color: #c9ccd3;
+    font-size: 12px;
+}
+QLabel#MomentBannerName, QLabel#MomentBannerHint, QLabel#MomentBannerAvatar { background: transparent; }
+QWidget#MomentBanner { background: transparent; }
+/* 卡片内部：文字与头像不能有黑色底 */
+QFrame#MomentCard QLabel { background: transparent; }
+QFrame#MomentCard QToolButton { background: transparent; border: none; }
+QToolButton#MomentAvatar { background: transparent; border: none; }
+QToolButton#MomentAvatar:hover { background: rgba(255, 255, 255, 24); border-radius: 22px; }

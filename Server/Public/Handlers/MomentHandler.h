@@ -25,6 +25,8 @@ private:
     bool handleLike(ClientSession *session, const QJsonObject &frame);
     bool handleComment(ClientSession *session, const QJsonObject &frame);
     bool handleDelete(ClientSession *session, const QJsonObject &frame);
+    bool handleBgGet(ClientSession *session, const QJsonObject &frame);
+    bool handleBgUpdate(ClientSession *session, const QJsonObject &frame);
 
     void sendError(ClientSession *session, int code, const QString &message);
     void notifyOwner(quint64 ownerId, const QString &event, const QString &message, qint64 momentId);

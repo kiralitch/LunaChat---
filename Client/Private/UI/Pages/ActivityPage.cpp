@@ -1,4 +1,4 @@
-﻿#include "UI/Widgets/ActivityDialog.h"
+﻿#include "UI/Pages/ActivityPage.h"
 
 #include <QDateTime>
 #include <QJsonArray>
@@ -10,12 +10,16 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QIcon>
 #include <QPushButton>
+#include <QToolButton>
 #include <QSpinBox>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <QtDebug>
 
+#include "Core/AppSettings.h"
+#include "Core/SoundPlayer.h"
 #include "LunaProtocol/MessageTypes.h"
 #include "Network/LunaClient.h"
 
@@ -32,9 +36,8 @@ QJsonObject makeFrame(const QString &type, const QJsonObject &data)
 
 }
 
-ActivityDialog::ActivityDialog(LunaClient *client, qint64 groupId, quint64 userId,
-                               bool canManage, QWidget *parent)
-    : QDialog(parent), m_client(client), m_groupId(groupId), m_userId(userId), m_canManage(canManage)
+ActivityPage::ActivityPage(LunaClient *client, quint64 userId, QWidget *parent)
+    : QWidget(parent), m_client(client), m_userId(userId)
 {
     setWindowTitle(QStringLiteral("群活动"));
     resize(820, 480);
@@ -60,10 +63,9 @@ ActivityDialog::ActivityDialog(LunaClient *client, qint64 groupId, quint64 userI
     auto *cancelButton = new QPushButton(QStringLiteral("取消活动"), this);
     auto *detailButton = new QPushButton(QStringLiteral("详情"), this);
     auto *refreshButton = new QPushButton(QStringLiteral("刷新"), this);
-    auto *closeButton = new QPushButton(QStringLiteral("关闭"), this);
 
-    createButton->setEnabled(m_canManage);
-    cancelButton->setEnabled(m_canManage);
+    m_createButton = createButton;
+    m_cancelButton = cancelButton;
 
     auto *buttonRow = new QHBoxLayout;
     buttonRow->addWidget(createButton);
@@ -73,47 +75,64 @@ ActivityDialog::ActivityDialog(LunaClient *client, qint64 groupId, quint64 userI
     buttonRow->addWidget(detailButton);
     buttonRow->addWidget(refreshButton);
     buttonRow->addStretch();
-    buttonRow->addWidget(closeButton);
 
     m_statusLabel = new QLabel(QStringLiteral("加载中..."), this);
 
     auto *layout = new QVBoxLayout(this);
+
+    // 顶部返回栏（图标 + 页面标题）
+    m_backButton = new QToolButton(this);
+    m_backButton->setObjectName(QStringLiteral("PageBackButton"));
+    m_backButton->setIcon(QIcon(QStringLiteral(":/icons/back.png")));
+    m_backButton->setIconSize(QSize(26, 26));
+    m_backButton->setFixedSize(40, 40);
+    m_backButton->setAutoRaise(true);
+    m_backButton->setCursor(Qt::PointingHandCursor);
+    m_backButton->setToolTip(QStringLiteral("返回聊天"));
+    connect(m_backButton, &QToolButton::clicked, this, &ActivityPage::backRequested);
+
+    auto *pageHeader = new QHBoxLayout;
+    pageHeader->setContentsMargins(0, 0, 0, 4);
+    pageHeader->addWidget(m_backButton);
+    auto *pageTitle = new QLabel(QStringLiteral("群活动"), this);
+    pageTitle->setObjectName(QStringLiteral("ChatTitle"));
+    pageHeader->addWidget(pageTitle);
+    pageHeader->addStretch();
+    layout->addLayout(pageHeader);
     layout->addWidget(m_table, 1);
     layout->addWidget(m_statusLabel);
     layout->addLayout(buttonRow);
 
-    connect(createButton, &QPushButton::clicked, this, &ActivityDialog::onCreate);
-    connect(signupButton, &QPushButton::clicked, this, &ActivityDialog::onSignup);
-    connect(cancelSignupButton, &QPushButton::clicked, this, &ActivityDialog::onCancelSignup);
-    connect(cancelButton, &QPushButton::clicked, this, &ActivityDialog::onCancelActivity);
-    connect(detailButton, &QPushButton::clicked, this, &ActivityDialog::onDetail);
-    connect(refreshButton, &QPushButton::clicked, this, &ActivityDialog::onRefresh);
-    connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
-    connect(m_client, &LunaClient::frameReceived, this, &ActivityDialog::onFrameReceived);
+    connect(createButton, &QPushButton::clicked, this, &ActivityPage::onCreate);
+    connect(signupButton, &QPushButton::clicked, this, &ActivityPage::onSignup);
+    connect(cancelSignupButton, &QPushButton::clicked, this, &ActivityPage::onCancelSignup);
+    connect(cancelButton, &QPushButton::clicked, this, &ActivityPage::onCancelActivity);
+    connect(detailButton, &QPushButton::clicked, this, &ActivityPage::onDetail);
+    connect(refreshButton, &QPushButton::clicked, this, &ActivityPage::refresh);
+    connect(m_client, &LunaClient::frameReceived, this, &ActivityPage::onFrameReceived);
 
-    requestList();
 }
 
-void ActivityDialog::requestList()
+void ActivityPage::requestList()
 {
     QJsonObject data;
     data.insert(QStringLiteral("groupId"), static_cast<double>(m_groupId));
     m_client->sendFrame(makeFrame(MsgType::kActivityList, data));
 }
 
-void ActivityDialog::requestDetail(qint64 activityId)
+void ActivityPage::requestDetail(qint64 activityId)
 {
     QJsonObject data;
     data.insert(QStringLiteral("activityId"), static_cast<double>(activityId));
     m_client->sendFrame(makeFrame(MsgType::kActivityDetail, data));
 }
 
-void ActivityDialog::onRefresh()
+void ActivityPage::refresh()
 {
     requestList();
 }
 
-qint64 ActivityDialog::selectedActivityId() const
+qint64 ActivityPage::selectedActivityId() const
 {
     const int row = m_table->currentRow();
     if (row < 0 || row >= m_table->rowCount())
@@ -121,7 +140,7 @@ qint64 ActivityDialog::selectedActivityId() const
     return static_cast<qint64>(m_table->item(row, 0)->data(Qt::UserRole).toLongLong());
 }
 
-void ActivityDialog::onSignup()
+void ActivityPage::onSignup()
 {
     const qint64 activityId = selectedActivityId();
     if (activityId == 0) {
@@ -134,7 +153,7 @@ void ActivityDialog::onSignup()
     m_statusLabel->setText(QStringLiteral("报名中..."));
 }
 
-void ActivityDialog::onCancelSignup()
+void ActivityPage::onCancelSignup()
 {
     const qint64 activityId = selectedActivityId();
     if (activityId == 0) {
@@ -147,7 +166,7 @@ void ActivityDialog::onCancelSignup()
     m_statusLabel->setText(QStringLiteral("取消报名中..."));
 }
 
-void ActivityDialog::onCancelActivity()
+void ActivityPage::onCancelActivity()
 {
     const qint64 activityId = selectedActivityId();
     if (activityId == 0) {
@@ -165,7 +184,7 @@ void ActivityDialog::onCancelActivity()
     m_statusLabel->setText(QStringLiteral("取消活动请求已发送..."));
 }
 
-void ActivityDialog::onDetail()
+void ActivityPage::onDetail()
 {
     const qint64 activityId = selectedActivityId();
     if (activityId == 0) {
@@ -175,7 +194,7 @@ void ActivityDialog::onDetail()
     requestDetail(activityId);
 }
 
-void ActivityDialog::onCreate()
+void ActivityPage::onCreate()
 {
     QDialog form(this);
     form.setWindowTitle(QStringLiteral("发布活动"));
@@ -231,7 +250,7 @@ void ActivityDialog::onCreate()
     m_statusLabel->setText(QStringLiteral("发布中..."));
 }
 
-void ActivityDialog::onFrameReceived(const QJsonObject &frame)
+void ActivityPage::onFrameReceived(const QJsonObject &frame)
 {
     const QString type = frame.value(QStringLiteral("type")).toString();
     const QJsonObject data = frame.value(QStringLiteral("data")).toObject();
@@ -270,6 +289,10 @@ void ActivityDialog::onFrameReceived(const QJsonObject &frame)
     if (type == MsgType::kActivityNotify) {
         m_statusLabel->setText(data.value(QStringLiteral("message")).toString());
         requestList();
+
+        // 新活动发布 / 活动开始 / 活动取消都会走 kActivityNotify：统一响"活动提醒音"
+        if (AppSettings::soundEnabled(AppSettings::kSoundActivity))
+            SoundPlayer::play(QStringLiteral("activity"));
         return;
     }
 
@@ -298,4 +321,14 @@ void ActivityDialog::onFrameReceived(const QJsonObject &frame)
         m_statusLabel->setText(QStringLiteral("错误：%1").arg(data.value(QStringLiteral("msg")).toString()));
         return;
     }
+}
+void ActivityPage::setGroup(qint64 groupId, bool canManage)
+{
+    m_groupId = groupId;
+    m_canManage = canManage;
+    if (m_createButton)
+        m_createButton->setEnabled(canManage);
+    if (m_cancelButton)
+        m_cancelButton->setEnabled(canManage);
+    refresh();
 }

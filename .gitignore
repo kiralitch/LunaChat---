@@ -76,3 +76,5 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 *.swp
+# packaged output (tools/package.ps1)
+dist/

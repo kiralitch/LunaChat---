@@ -86,8 +86,13 @@ bool FileHandler::handleMeta(ClientSession *session, const QJsonObject &frame)
                              .value(QStringLiteral("folderPath")).toString();
         if (folder.isEmpty())
             folder = QCoreApplication::applicationDirPath() + QStringLiteral("/group_files/%1").arg(groupId);
+        // 支持上传到群共享文件夹的子目录：path 为相对路径
+        QString rel = data.value(QStringLiteral("path")).toString().trimmed();
+        if (rel.contains(QStringLiteral("..")))
+            rel.clear();
+        if (!rel.isEmpty())
+            folder = QDir(folder).filePath(rel);
         QDir().mkpath(folder);
-
         const QString path = QDir(folder).filePath(fileName);
         auto *file = new QFile(path);
         if (!file->open(QIODevice::WriteOnly)) {
