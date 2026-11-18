@@ -1,17 +1,20 @@
 ﻿#include "UI/Pages/ActivityPage.h"
 
 #include <QDateTime>
-#include <QJsonArray>
 #include <QDateTimeEdit>
+#include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QIcon>
 #include <QPushButton>
+#include <QStackedLayout>
 #include <QToolButton>
 #include <QSpinBox>
 #include <QTableWidget>
@@ -58,6 +61,7 @@ ActivityPage::ActivityPage(LunaClient *client, quint64 userId, QWidget *parent)
     m_table->verticalHeader()->setVisible(false);
 
     auto *createButton = new QPushButton(QStringLiteral("发布活动"), this);
+    createButton->setObjectName(QStringLiteral("PrimaryButton"));
     auto *signupButton = new QPushButton(QStringLiteral("报名"), this);
     auto *cancelSignupButton = new QPushButton(QStringLiteral("取消报名"), this);
     auto *cancelButton = new QPushButton(QStringLiteral("取消活动"), this);
@@ -79,6 +83,8 @@ ActivityPage::ActivityPage(LunaClient *client, quint64 userId, QWidget *parent)
     m_statusLabel = new QLabel(QStringLiteral("加载中..."), this);
 
     auto *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(18, 8, 18, 14);
+    layout->setSpacing(10);
 
     // 顶部返回栏（图标 + 页面标题）
     m_backButton = new QToolButton(this);
@@ -91,15 +97,53 @@ ActivityPage::ActivityPage(LunaClient *client, quint64 userId, QWidget *parent)
     m_backButton->setToolTip(QStringLiteral("返回聊天"));
     connect(m_backButton, &QToolButton::clicked, this, &ActivityPage::backRequested);
 
+    auto *pageTitle = new QLabel(QStringLiteral("群活动"), this);
+    pageTitle->setObjectName(QStringLiteral("ChatTitle"));
+    auto *pageHint = new QLabel(QStringLiteral("发布、报名与查看群内活动"), this);
+    pageHint->setObjectName(QStringLiteral("ChatSubtitle"));
+
+    auto *titleBox = new QVBoxLayout;
+    titleBox->setContentsMargins(0, 0, 0, 0);
+    titleBox->setSpacing(0);
+    titleBox->addWidget(pageTitle);
+    titleBox->addWidget(pageHint);
+
     auto *pageHeader = new QHBoxLayout;
     pageHeader->setContentsMargins(0, 0, 0, 4);
     pageHeader->addWidget(m_backButton);
-    auto *pageTitle = new QLabel(QStringLiteral("群活动"), this);
-    pageTitle->setObjectName(QStringLiteral("ChatTitle"));
-    pageHeader->addWidget(pageTitle);
-    pageHeader->addStretch();
+    pageHeader->addLayout(titleBox, 1);
+
+    auto *tableCard = new QFrame(this);
+    tableCard->setObjectName(QStringLiteral("SettingsCard"));
+    auto *tableLayout = new QVBoxLayout(tableCard);
+    tableLayout->setContentsMargins(8, 8, 8, 8);
+
+    m_empty = new QWidget(this);
+    auto *emptyLayout = new QVBoxLayout(m_empty);
+    emptyLayout->setSpacing(6);
+    emptyLayout->addStretch();
+    auto *emptyIcon = new QLabel(m_empty);
+    emptyIcon->setPixmap(QIcon(QStringLiteral(":/icons/empty_activity.png")).pixmap(96, 96));
+    emptyIcon->setAlignment(Qt::AlignCenter);
+    auto *emptyTitle = new QLabel(QStringLiteral("还没有群活动"), m_empty);
+    emptyTitle->setObjectName(QStringLiteral("ChatTitle"));
+    emptyTitle->setAlignment(Qt::AlignCenter);
+    auto *emptyHint = new QLabel(QStringLiteral("群主或管理员可以发布第一个活动"), m_empty);
+    emptyHint->setObjectName(QStringLiteral("ChatSubtitle"));
+    emptyHint->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(emptyIcon, 0, Qt::AlignHCenter);
+    emptyLayout->addWidget(emptyTitle);
+    emptyLayout->addWidget(emptyHint);
+    emptyLayout->addStretch();
+
+    m_tableStack = new QStackedLayout;
+    m_tableStack->addWidget(m_table);
+    m_tableStack->addWidget(m_empty);
+    m_tableStack->setCurrentWidget(m_empty);
+    tableLayout->addLayout(m_tableStack);
+
     layout->addLayout(pageHeader);
-    layout->addWidget(m_table, 1);
+    layout->addWidget(tableCard, 1);
     layout->addWidget(m_statusLabel);
     layout->addLayout(buttonRow);
 
@@ -283,6 +327,9 @@ void ActivityPage::onFrameReceived(const QJsonObject &frame)
         }
         m_table->resizeColumnsToContents();
         m_statusLabel->setText(QStringLiteral("共 %1 个活动").arg(activities.size()));
+        if (m_tableStack)
+            m_tableStack->setCurrentWidget(activities.isEmpty() ? m_empty
+                                                                : static_cast<QWidget *>(m_table));
         return;
     }
 
@@ -298,7 +345,6 @@ void ActivityPage::onFrameReceived(const QJsonObject &frame)
 
     if (type == MsgType::kActivityDetailResp) {
         QStringList lines;
-        lines << QStringLiteral("活动：%1").arg(data.value(QStringLiteral("title")).toString());
         lines << QStringLiteral("状态：%1").arg(data.value(QStringLiteral("status")).toString());
         lines << QStringLiteral("地点：%1").arg(data.value(QStringLiteral("location")).toString());
         lines << QStringLiteral("时间：%1 ~ %2").arg(data.value(QStringLiteral("startTime")).toString(),
@@ -313,7 +359,38 @@ void ActivityPage::onFrameReceived(const QJsonObject &frame)
             people << value.toObject().value(QStringLiteral("nickname")).toString();
         lines << QStringLiteral("已报名（%1）：%2").arg(people.size()).arg(people.join(QStringLiteral("、")));
 
-        QMessageBox::information(this, QStringLiteral("活动详情"), lines.join(QLatin1Char('\n')));
+        QDialog dialog(this);
+        dialog.setObjectName(QStringLiteral("ActivityDetailDialog"));
+        dialog.setWindowTitle(QStringLiteral("活动详情"));
+        dialog.resize(460, 380);
+
+        auto *titleLabel = new QLabel(data.value(QStringLiteral("title")).toString(), &dialog);
+        titleLabel->setObjectName(QStringLiteral("ChatTitle"));
+        auto *hintLabel = new QLabel(QStringLiteral("活动详情"), &dialog);
+        hintLabel->setObjectName(QStringLiteral("ChatSubtitle"));
+
+        auto *bodyLabel = new QLabel(lines.join(QLatin1Char('\n')), &dialog);
+        bodyLabel->setWordWrap(true);
+        bodyLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        bodyLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+
+        auto *closeButton = new QPushButton(QStringLiteral("关闭"), &dialog);
+        closeButton->setObjectName(QStringLiteral("PrimaryButton"));
+        connect(closeButton, &QPushButton::clicked, &dialog, &QDialog::accept);
+
+        auto *buttonRow = new QHBoxLayout;
+        buttonRow->addStretch();
+        buttonRow->addWidget(closeButton);
+
+        auto *dialogLayout = new QVBoxLayout(&dialog);
+        dialogLayout->setContentsMargins(20, 16, 20, 16);
+        dialogLayout->setSpacing(10);
+        dialogLayout->addWidget(titleLabel);
+        dialogLayout->addWidget(hintLabel);
+        dialogLayout->addWidget(bodyLabel, 1);
+        dialogLayout->addLayout(buttonRow);
+
+        dialog.exec();
         return;
     }
 

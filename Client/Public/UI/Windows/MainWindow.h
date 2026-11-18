@@ -10,6 +10,9 @@
 #include <QSet>
 
 class ChatPage;
+class AddFriendPage;
+class CreateGroupPage;
+class GroupSearchPage;
 class LunaClient;
 class QFile;
 class QListWidget;
@@ -26,6 +29,9 @@ public:
                QWidget *parent = nullptr);
     ~MainWindow() override;
 
+protected:
+    bool nativeEvent(const QByteArray &eventType, void *message, long *result) override;
+
 private slots:
     void onSessionItemChanged();
     void onSendRequested(const QString &text);
@@ -37,6 +43,8 @@ private slots:
     void onOpenSettings();
     void onOpenProfile();
     void onAddFriend();
+    void onOpenRequests();
+    void onOpenGroupSearch();
     void onOpenGroupInfo();
     void onOpenGroupFiles();
     void playSound(const QString &fileName);
@@ -57,6 +65,8 @@ private:
         QString content;
         bool self = false;
         QString timeText;
+        QString dateKey;   // yyyy-MM-dd，聊天列表按日期分组用
+        qint64 msgId = 0;
     };
 
     void rebuildConversationList();
@@ -73,6 +83,8 @@ private:
     void requestAvatar(quint64 userId);
     void sendVoice(const QByteArray &wavData, int durationMs);
     QString keyOfUser(quint64 userId) const;
+    void setSection(const QString &name);
+    void requestDeleteFriend(quint64 userId, const QString &nickname);
     QString keyOfGroup(qint64 groupId) const;
 
     LunaClient *m_client = nullptr;
@@ -98,7 +110,14 @@ private:
     class MatchPage *m_matchPage = nullptr;
     class GroupInfoPage *m_groupInfoPage = nullptr;
     class GroupFilesPage *m_groupFilesPage = nullptr;
+    class AddFriendPage *m_addFriendPage = nullptr;
+    class CreateGroupPage *m_createGroupPage = nullptr;
+    class RequestsPage *m_requestsPage = nullptr;
+    class GroupSearchPage *m_groupSearchPage = nullptr;
+    class BadgeButton *m_requestsButton = nullptr;
+    class QToolButton *m_groupSearchButton = nullptr;
     class IconRail *m_rail = nullptr;
+    class TitleBar *m_titleBar = nullptr;
     class SettingsPage *m_settingsPage = nullptr;
     class QStackedWidget *m_mainStack = nullptr;
 

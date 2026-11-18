@@ -24,6 +24,7 @@ private:
     bool handleGroup(ClientSession *session, const QJsonObject &frame);
     bool handlePrivate(ClientSession *session, const QJsonObject &frame);
     bool handleHistory(ClientSession *session, const QJsonObject &frame);
+    bool handleRecall(ClientSession *session, const QJsonObject &frame);
 
     void sendError(ClientSession *session, int code, const QString &message);
 };

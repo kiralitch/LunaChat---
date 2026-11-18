@@ -1,13 +1,13 @@
-# LunaChat 消息类型表（87 种）
+﻿# LunaChat 消息类型表（109 种）
 
 > 对应 `Common/Public/LunaProtocol/MessageTypes.h`，两端只引用常量、不手写字符串。
 > 方向：`C→S` 客户端发起，`S→C` 服务端推送/回包，`双向` 表示请求与转发都用同一 type。
 
 | 统计项 | 数量 |
 | --- | --- |
-| 消息类型总数 | 87 |
-| 客户端发起（C→S） | 39 |
-| 服务端推送/回包（S→C） | 36 |
+| 消息类型总数 | 109 |
+| 客户端发起（C→S） | 50 |
+| 服务端推送/回包（S→C） | 47 |
 | 双向复用（请求 + 转发同 type） | 12 |
 | 业务模块 | 9 |
 
@@ -25,7 +25,12 @@
 | `kick` | S→C | 被管理员踢下线（携带原因） |
 | `error` | S→C | 统一错误回包（code、msg） |
 
-## 2. 好友与个人资料（10）
+## 2. 好友与个人资料（17）
+
+| type | 方向 | 说明 |
+| --- | --- | --- |
+| `user_search` | C→S | 按用户名/昵称关键词搜索用户（加好友页） |
+| `user_search_resp` | S→C | 搜索结果（userId、username、nickname、friend） |
 
 | type | 方向 | 说明 |
 | --- | --- | --- |
@@ -33,14 +38,19 @@
 | `friend_accept` | C→S | 同意申请，双向写入 accepted |
 | `friend_list` | C→S | 请求好友列表 |
 | `friend_list_resp` | S→C | 好友列表（含在线状态、备注名） |
-| `friend_notify` | S→C | 好友申请 / 通过 / 上线等通知 |
+| `friend_notify` | S→C | 好友申请 / 通过 / 拒绝 / 上线等通知 |
+| `friend_requests` | C→S | 拉取待处理好友申请 |
+| `friend_requests_resp` | S→C | 好友申请列表（fromUser、昵称、用户名、时间） |
+| `friend_reject` | C→S | 拒绝好友申请（删除 pending 记录） |
+| `friend_delete` | C→S | 删除好友（双向删除关系） |
+| `friend_delete_resp` | S→C | 删除好友结果 |
 | `profile_get` | C→S | 拉取个人资料 |
 | `profile_update` | C→S | 修改昵称等资料 |
 | `profile_resp` | S→C | 资料回包 |
 | `avatar_get` | C→S | 按 userId 拉头像（群头像另见 group_avatar_get） |
 | `avatar_resp` | S→C | 头像 base64 回包 |
 
-## 3. 群组与群资料（14）
+## 3. 群组与群资料（25）
 
 | type | 方向 | 说明 |
 | --- | --- | --- |
@@ -58,8 +68,19 @@
 | `group_dissolve` | C→S | 解散群（仅群主） |
 | `group_avatar_get` | C→S | 拉群头像 |
 | `group_avatar_resp` | S→C | 群头像 base64 回包 |
+| `group_search` | C→S | 按群名称关键词搜索公开群 |
+| `group_search_resp` | S→C | 搜索结果（群 id、名称、人数、是否已加入/已申请） |
+| `group_join_request` | C→S | 申请加入群，落库 pending |
+| `group_join_request_resp` | S→C | 申请结果（含 requestId） |
+| `group_join_requests` | C→S | 拉取我管理的群的待审批申请 |
+| `group_join_requests_resp` | S→C | 入群申请列表（申请人、目标群、requestId） |
+| `group_join_accept` | C→S | 同意入群（写入 group_member） |
+| `group_join_reject` | C→S | 拒绝入群 |
+| `group_join_handle_resp` | S→C | 审批结果回包 |
+| `group_join_notify` | S→C | 有人申请入群时推送给群主/管理员 |
+| `group_join_result` | S→C | 申请结果通知（同意 / 拒绝） |
 
-## 4. 聊天与会话（6）
+## 4. 聊天与会话（8）
 
 | type | 方向 | 说明 |
 | --- | --- | --- |
@@ -67,7 +88,9 @@
 | `chat_private` | 双向 | 私聊消息：对方离线时转存 offline_message |
 | `chat_broadcast` | S→C | 全员系统广播 |
 | `chat_history` | C→S | 拉取历史消息（按会话 + 时间游标） |
-| `chat_history_resp` | S→C | 历史消息回包 |
+| `chat_history_resp` | S→C | 历史消息回包（含 recalled 标记） |
+| `chat_recall` | 双向 | 撤回自己两分钟内的消息（C 请求，S 广播） |
+| `chat_recall_resp` | S→C | 撤回结果 |
 | `offline_msg` | S→C | 登录后一次性补推的离线消息批量包 |
 
 ## 5. 文件与语音（9）
@@ -97,7 +120,7 @@
 | `group_file_chunk` | S→C | 下载分块 |
 | `group_file_download_done` | S→C | 下载完成回执 |
 
-## 7. 朋友圈（15）
+## 7. 朋友圈（17）
 
 | type | 方向 | 说明 |
 | --- | --- | --- |
@@ -110,6 +133,8 @@
 | `moment_comment_resp` | S→C | 评论结果 |
 | `moment_delete` | C→S | 删除自己的动态（软删 deleted=1） |
 | `moment_delete_resp` | S→C | 删除结果 |
+| `moment_comment_delete` | C→S | 删除自己的评论 |
+| `moment_comment_delete_resp` | S→C | 删除评论结果 |
 | `moment_notify` | S→C | 新动态 / 点赞 / 评论通知 |
 | `moment_image` | C→S | 按需拉取某张图片 |
 | `moment_image_resp` | S→C | 图片 base64 数据 |

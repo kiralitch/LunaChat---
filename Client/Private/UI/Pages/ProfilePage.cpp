@@ -3,6 +3,8 @@
 #include <QBuffer>
 #include <QDateTime>
 #include <QFileDialog>
+#include <QFrame>
+#include <QHBoxLayout>
 #include <QImage>
 #include <QMouseEvent>
 #include <QPainter>
@@ -160,40 +162,78 @@ ProfilePage::ProfilePage(LunaClient *client, quint64 userId, QWidget *parent)
 {
     auto *title = new QLabel(QStringLiteral("个人资料"), this);
     title->setObjectName(QStringLiteral("ChatTitle"));
+    auto *hint = new QLabel(QStringLiteral("头像、昵称与账号信息"), this);
+    hint->setObjectName(QStringLiteral("ChatSubtitle"));
+
+    auto *titleBox = new QVBoxLayout;
+    titleBox->setContentsMargins(0, 0, 0, 0);
+    titleBox->setSpacing(0);
+    titleBox->addWidget(title);
+    titleBox->addWidget(hint);
+
+    auto *headerRow = new QHBoxLayout;
+    headerRow->setContentsMargins(0, 0, 0, 0);
+    headerRow->addLayout(titleBox, 1);
 
     m_avatarLabel = new QLabel(this);
     m_avatarLabel->setFixedSize(112, 112);
     m_avatarLabel->setAlignment(Qt::AlignCenter);
     m_avatarLabel->setStyleSheet(QStringLiteral(
-        "border-radius:56px; background:#5865f2; color:white; font-size:40px; font-weight:700;"));
+        "border-radius:56px;"
+        "background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #7C5CFF, stop:1 #4D8DFF);"
+        "color:white; font-size:40px; font-weight:700;"));
 
     m_usernameLabel = new QLabel(this);
-    m_usernameLabel->setStyleSheet(QStringLiteral("color:#8b8f98;"));
+    m_usernameLabel->setObjectName(QStringLiteral("ChatSubtitle"));
 
     m_nicknameEdit = new QLineEdit(this);
     m_nicknameEdit->setPlaceholderText(QStringLiteral("昵称（1-32 字）"));
-    m_nicknameEdit->setFixedWidth(260);
+    m_nicknameEdit->setMaximumWidth(420);
 
     m_statusLabel = new QLabel(QStringLiteral("修改昵称或头像后点保存"), this);
+    m_statusLabel->setObjectName(QStringLiteral("ChatSubtitle"));
 
     auto *pickButton = new QPushButton(QStringLiteral("选择头像"), this);
     auto *saveButton = new QPushButton(QStringLiteral("保存"), this);
+    saveButton->setObjectName(QStringLiteral("PrimaryButton"));
+    saveButton->setFixedWidth(120);
 
     connect(pickButton, &QPushButton::clicked, this, &ProfilePage::onPickAvatar);
     connect(saveButton, &QPushButton::clicked, this, &ProfilePage::onSave);
     connect(m_client, &LunaClient::frameReceived, this, &ProfilePage::onFrameReceived);
 
+    auto *card = new QFrame(this);
+    card->setObjectName(QStringLiteral("SettingsCard"));
+    auto *cardLayout = new QHBoxLayout(card);
+    cardLayout->setContentsMargins(24, 24, 24, 24);
+    cardLayout->setSpacing(24);
+    cardLayout->addWidget(m_avatarLabel, 0, Qt::AlignTop);
+
+    auto *right = new QVBoxLayout;
+    right->setContentsMargins(0, 0, 0, 0);
+    right->setSpacing(10);
+    right->addWidget(m_usernameLabel);
+
+    auto *nameCaption = new QLabel(QStringLiteral("昵称"), card);
+    nameCaption->setObjectName(QStringLiteral("LoginCaption"));
+    right->addWidget(nameCaption);
+
+    auto *nameRow = new QHBoxLayout;
+    nameRow->setSpacing(10);
+    nameRow->addWidget(m_nicknameEdit, 1);
+    nameRow->addWidget(saveButton);
+    right->addLayout(nameRow);
+
+    right->addWidget(pickButton, 0, Qt::AlignLeft);
+    right->addWidget(m_statusLabel);
+    right->addStretch();
+    cardLayout->addLayout(right, 1);
+
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(28, 20, 28, 20);
-    layout->setSpacing(14);
-    layout->addWidget(title);
-    layout->addSpacing(10);
-    layout->addWidget(m_avatarLabel);
-    layout->addWidget(m_usernameLabel);
-    layout->addWidget(m_nicknameEdit);
-    layout->addWidget(pickButton);
-    layout->addWidget(saveButton);
-    layout->addWidget(m_statusLabel);
+    layout->setContentsMargins(18, 8, 18, 14);
+    layout->setSpacing(12);
+    layout->addLayout(headerRow);
+    layout->addWidget(card);
     layout->addStretch();
 }
 

@@ -62,7 +62,8 @@ bool MomentHandler::handle(ClientSession *session, const QJsonObject &frame)
     const QString type = frame.value(QStringLiteral("type")).toString();
     const bool mine = (type == MsgType::kMomentPublish || type == MsgType::kMomentList
                        || type == MsgType::kMomentImage || type == MsgType::kMomentLike
-                       || type == MsgType::kMomentComment || type == MsgType::kMomentDelete
+                       || type == MsgType::kMomentComment || type == MsgType::kMomentCommentDelete
+                       || type == MsgType::kMomentDelete
                        || type == MsgType::kMomentBgGet || type == MsgType::kMomentBgUpdate);
     if (!mine)
         return false;
@@ -82,6 +83,8 @@ bool MomentHandler::handle(ClientSession *session, const QJsonObject &frame)
         return handleLike(session, frame);
     if (type == MsgType::kMomentComment)
         return handleComment(session, frame);
+    if (type == MsgType::kMomentCommentDelete)
+        return handleCommentDelete(session, frame);
     if (type == MsgType::kMomentBgGet)
         return handleBgGet(session, frame);
     if (type == MsgType::kMomentBgUpdate)
@@ -278,6 +281,28 @@ bool MomentHandler::handleComment(ClientSession *session, const QJsonObject &fra
         notifyOwner(owner, QStringLiteral("comment"),
                     QStringLiteral("%1 评论了你的动态：%2").arg(session->nickname(), content.left(30)),
                     momentId);
+    return true;
+}
+
+bool MomentHandler::handleCommentDelete(ClientSession *session, const QJsonObject &frame)
+{
+    const qint64 commentId = static_cast<qint64>(
+        frame.value(QStringLiteral("data")).toObject().value(QStringLiteral("commentId")).toDouble());
+
+    QJsonObject replyData;
+    if (commentId <= 0 || !DbManager::instance().deleteMomentComment(commentId, session->userId())) {
+        replyData.insert(QStringLiteral("ok"), false);
+        replyData.insert(QStringLiteral("msg"), QStringLiteral("只能删除自己发布的评论"));
+    } else {
+        replyData.insert(QStringLiteral("ok"), true);
+        replyData.insert(QStringLiteral("msg"), QStringLiteral("评论已删除"));
+    }
+
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kMomentCommentDeleteResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), replyData);
+    session->sendFrame(reply);
     return true;
 }
 

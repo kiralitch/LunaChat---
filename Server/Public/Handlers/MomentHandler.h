@@ -24,6 +24,7 @@ private:
     bool handleImage(ClientSession *session, const QJsonObject &frame);
     bool handleLike(ClientSession *session, const QJsonObject &frame);
     bool handleComment(ClientSession *session, const QJsonObject &frame);
+    bool handleCommentDelete(ClientSession *session, const QJsonObject &frame);
     bool handleDelete(ClientSession *session, const QJsonObject &frame);
     bool handleBgGet(ClientSession *session, const QJsonObject &frame);
     bool handleBgUpdate(ClientSession *session, const QJsonObject &frame);

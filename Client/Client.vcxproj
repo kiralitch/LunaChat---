@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -95,7 +95,6 @@
     <QtMoc Include="Public\UI\Windows\MainWindow.h"/>
     <QtMoc Include="Public\Network\LunaClient.h"/>
     <QtMoc Include="Public\UI\Windows\LoginWindow.h"/>
-    <QtMoc Include="Public\UI\Windows\RegisterDialog.h"/>
     <QtMoc Include="Public\UI\Pages\ChatPage.h"/>
     <QtMoc Include="Public\UI\Pages\ProfilePage.h"/>
     <QtMoc Include="Public\UI\Pages\ActivityPage.h"/>
@@ -103,6 +102,12 @@
     <QtMoc Include="Public\UI\Pages\GroupFilesPage.h"/>
     <QtMoc Include="Public\UI\Pages\MomentPage.h"/>
     <QtMoc Include="Public\UI\Pages\MatchPage.h"/>
+    <QtMoc Include="Public\UI\Pages\AddFriendPage.h"/>
+    <QtMoc Include="Public\UI\Pages\CreateGroupPage.h"/>
+    <QtMoc Include="Public\UI\Pages\RequestsPage.h"/>
+    <QtMoc Include="Public\UI\Pages\GroupSearchPage.h"/>
+    <QtMoc Include="Public\UI\Widgets\BadgeButton.h"/>
+    <QtMoc Include="Public\UI\Widgets\ConfirmDialog.h"/>
     <QtMoc Include="Public\UI\Widgets\IconRail.h"/>
     <QtMoc Include="Public\Core\Recorder.h"/>
     <QtMoc Include="Public\UI\Pages\SettingsPage.h"/>
@@ -110,21 +115,29 @@
     <ClInclude Include="Public\Core\AudioProbe.h"/>
     <ClInclude Include="Public\Core\AppSettings.h"/>
     <ClInclude Include="Public\Core\SoundPlayer.h"/>
+    <ClInclude Include="Public\UI\Widgets\TitleBar.h"/>
     <QtRcc Include="resources\resources.qrc"/>
+    <ResourceCompile Include="resources\app.rc"/>
     <ClCompile Include="main.cpp"/>
     <ClCompile Include="Private\Core\AudioProbe.cpp"/>
     <ClCompile Include="Private\Network\LunaClient.cpp"/>
     <ClCompile Include="Private\UI\Windows\LoginWindow.cpp"/>
-    <ClCompile Include="Private\UI\Windows\RegisterDialog.cpp"/>
     <ClCompile Include="Private\UI\Pages\ChatPage.cpp"/>
     <ClCompile Include="Private\UI\Pages\ProfilePage.cpp"/>
     <ClCompile Include="Private\UI\Pages\ActivityPage.cpp"/>
     <ClCompile Include="Private\UI\Pages\GroupInfoPage.cpp"/>
     <ClCompile Include="Private\UI\Pages\GroupFilesPage.cpp"/>
     <ClCompile Include="Private\UI\Widgets\AvatarCropper.cpp"/>
+    <ClCompile Include="Private\UI\Widgets\TitleBar.cpp"/>
     <ClCompile Include="Private\UI\Widgets\IconRail.cpp"/>
     <ClCompile Include="Private\UI\Pages\MomentPage.cpp"/>
     <ClCompile Include="Private\UI\Pages\MatchPage.cpp"/>
+    <ClCompile Include="Private\UI\Pages\AddFriendPage.cpp"/>
+    <ClCompile Include="Private\UI\Pages\CreateGroupPage.cpp"/>
+    <ClCompile Include="Private\UI\Pages\RequestsPage.cpp"/>
+    <ClCompile Include="Private\UI\Pages\GroupSearchPage.cpp"/>
+    <ClCompile Include="Private\UI\Widgets\BadgeButton.cpp"/>
+    <ClCompile Include="Private\UI\Widgets\ConfirmDialog.cpp"/>
     <ClCompile Include="Private\Core\Recorder.cpp"/>
     <ClCompile Include="Private\UI\Pages\SettingsPage.cpp"/>
     <ClCompile Include="Private\Core\AppSettings.cpp"/>

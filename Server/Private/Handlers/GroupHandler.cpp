@@ -33,7 +33,10 @@ bool GroupHandler::handle(ClientSession *session, const QJsonObject &frame)
                         || type == MsgType::kGroupInfoUpdate || type == MsgType::kGroupLeave
                         || type == MsgType::kGroupTransfer || type == MsgType::kGroupDissolve || type == MsgType::kGroupAvatarGet
                         || type == MsgType::kGroupFilesList || type == MsgType::kGroupFileMkdir
-                        || type == MsgType::kGroupFileDelete || type == MsgType::kGroupFileDownload);
+                        || type == MsgType::kGroupFileDelete || type == MsgType::kGroupFileDownload
+                        || type == MsgType::kGroupSearch || type == MsgType::kGroupJoinRequest
+                        || type == MsgType::kGroupJoinRequests || type == MsgType::kGroupJoinAccept
+                        || type == MsgType::kGroupJoinReject);
     if (!known)
         return false;
 
@@ -46,6 +49,16 @@ bool GroupHandler::handle(ClientSession *session, const QJsonObject &frame)
         return handleCreate(session, frame);
     if (type == MsgType::kGroupList)
         return handleList(session, frame);
+    if (type == MsgType::kGroupSearch)
+        return handleSearch(session, frame);
+    if (type == MsgType::kGroupJoinRequest)
+        return handleJoinRequest(session, frame);
+    if (type == MsgType::kGroupJoinRequests)
+        return handleJoinRequests(session, frame);
+    if (type == MsgType::kGroupJoinAccept)
+        return handleJoinHandle(session, frame, true);
+    if (type == MsgType::kGroupJoinReject)
+        return handleJoinHandle(session, frame, false);
     if (type == MsgType::kGroupInvite)
         return handleInvite(session, frame);
     if (type == MsgType::kGroupInfoGet)
@@ -116,6 +129,172 @@ bool GroupHandler::handleCreate(ClientSession *session, const QJsonObject &frame
     replyData.insert(QStringLiteral("msg"), QStringLiteral("建群成功"));
     replyData.insert(QStringLiteral("groupId"), static_cast<double>(groupId));
     replyData.insert(QStringLiteral("name"), name);
+    reply.insert(QStringLiteral("data"), replyData);
+    session->sendFrame(reply);
+    return true;
+}
+
+bool GroupHandler::handleSearch(ClientSession *session, const QJsonObject &frame)
+{
+    const QString keyword = frame.value(QStringLiteral("data")).toObject()
+                                .value(QStringLiteral("keyword")).toString().trimmed();
+
+    QJsonObject data;
+    data.insert(QStringLiteral("keyword"), keyword);
+    data.insert(QStringLiteral("groups"),
+                DbManager::instance().searchGroups(keyword, session->userId()));
+
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kGroupSearchResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), data);
+    session->sendFrame(reply);
+    return true;
+}
+
+bool GroupHandler::handleJoinRequest(ClientSession *session, const QJsonObject &frame)
+{
+    const qint64 groupId = static_cast<qint64>(
+        frame.value(QStringLiteral("data")).toObject().value(QStringLiteral("groupId")).toDouble());
+
+    QJsonObject replyData;
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kGroupJoinRequestResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+
+    const QJsonObject info = DbManager::instance().groupInfo(groupId, session->userId());
+    const QString groupName = info.value(QStringLiteral("name")).toString();
+    if (groupId <= 0 || groupName.isEmpty()) {
+        replyData.insert(QStringLiteral("ok"), false);
+        replyData.insert(QStringLiteral("msg"), QStringLiteral("群不存在"));
+        reply.insert(QStringLiteral("data"), replyData);
+        session->sendFrame(reply);
+        return true;
+    }
+    if (DbManager::instance().isGroupMember(groupId, session->userId())) {
+        replyData.insert(QStringLiteral("ok"), false);
+        replyData.insert(QStringLiteral("msg"), QStringLiteral("你已经在群里了"));
+        reply.insert(QStringLiteral("data"), replyData);
+        session->sendFrame(reply);
+        return true;
+    }
+
+    const qint64 requestId = DbManager::instance().requestGroupJoin(groupId, session->userId());
+    if (requestId <= 0) {
+        replyData.insert(QStringLiteral("ok"), false);
+        replyData.insert(QStringLiteral("msg"), QStringLiteral("申请发送失败"));
+        reply.insert(QStringLiteral("data"), replyData);
+        session->sendFrame(reply);
+        return true;
+    }
+
+    // 通知群主与管理员（在线的立刻收到红点）
+    QJsonObject notifyData;
+    notifyData.insert(QStringLiteral("event"), QStringLiteral("join_request"));
+    notifyData.insert(QStringLiteral("requestId"), static_cast<double>(requestId));
+    notifyData.insert(QStringLiteral("groupId"), static_cast<double>(groupId));
+    notifyData.insert(QStringLiteral("groupName"), groupName);
+    notifyData.insert(QStringLiteral("userId"), static_cast<double>(session->userId()));
+    notifyData.insert(QStringLiteral("nickname"), session->nickname());
+    notifyData.insert(QStringLiteral("message"),
+                      QStringLiteral("%1 申请加入「%2」").arg(session->nickname(), groupName));
+
+    QJsonObject notify;
+    notify.insert(QStringLiteral("type"), MsgType::kGroupJoinNotify);
+    notify.insert(QStringLiteral("ts"), nowMs());
+    notify.insert(QStringLiteral("data"), notifyData);
+
+    for (quint64 memberId : DbManager::instance().groupMemberIds(groupId)) {
+        if (memberId != session->userId()
+            && DbManager::instance().isGroupAdmin(groupId, memberId)) {
+            emit frameToUser(memberId, notify);
+        }
+    }
+
+    qInfo().noquote() << QStringLiteral("[group] join request %1 -> %2 by %3")
+                             .arg(session->nickname(), groupName).arg(requestId);
+
+    replyData.insert(QStringLiteral("ok"), true);
+    replyData.insert(QStringLiteral("msg"), QStringLiteral("申请已发送，等待群主或管理员同意"));
+    replyData.insert(QStringLiteral("requestId"), static_cast<double>(requestId));
+    reply.insert(QStringLiteral("data"), replyData);
+    session->sendFrame(reply);
+    return true;
+}
+
+bool GroupHandler::handleJoinRequests(ClientSession *session, const QJsonObject &)
+{
+    QJsonObject data;
+    data.insert(QStringLiteral("requests"),
+                DbManager::instance().pendingGroupJoinRequests(session->userId()));
+
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kGroupJoinRequestsResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), data);
+    session->sendFrame(reply);
+    return true;
+}
+
+bool GroupHandler::handleJoinHandle(ClientSession *session, const QJsonObject &frame, bool accept)
+{
+    const qint64 requestId = static_cast<qint64>(
+        frame.value(QStringLiteral("data")).toObject().value(QStringLiteral("requestId")).toDouble());
+
+    QJsonObject replyData;
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kGroupJoinHandleResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+
+    const QJsonObject request = DbManager::instance().groupJoinRequestById(requestId);
+    const qint64 groupId = static_cast<qint64>(request.value(QStringLiteral("groupId")).toDouble());
+    const quint64 targetId = static_cast<quint64>(request.value(QStringLiteral("userId")).toDouble());
+
+    if (requestId <= 0 || groupId <= 0 || targetId == 0
+        || !DbManager::instance().isGroupAdmin(groupId, session->userId())) {
+        replyData.insert(QStringLiteral("ok"), false);
+        replyData.insert(QStringLiteral("msg"), QStringLiteral("没有权限处理该申请"));
+        reply.insert(QStringLiteral("data"), replyData);
+        session->sendFrame(reply);
+        return true;
+    }
+
+    if (accept && !DbManager::instance().addGroupMember(groupId, targetId)) {
+        replyData.insert(QStringLiteral("ok"), false);
+        replyData.insert(QStringLiteral("msg"), QStringLiteral("加入群聊失败"));
+        reply.insert(QStringLiteral("data"), replyData);
+        session->sendFrame(reply);
+        return true;
+    }
+
+    DbManager::instance().updateGroupJoinRequest(requestId,
+                                                 accept ? QStringLiteral("accepted")
+                                                        : QStringLiteral("rejected"));
+
+    const QString groupName = DbManager::instance().groupInfo(groupId, session->userId())
+                                  .value(QStringLiteral("name")).toString();
+    if (accept)
+        pushGroupListTo(targetId);
+
+    // 通知申请人结果
+    QJsonObject resultData;
+    resultData.insert(QStringLiteral("ok"), true);
+    resultData.insert(QStringLiteral("accepted"), accept);
+    resultData.insert(QStringLiteral("groupId"), static_cast<double>(groupId));
+    resultData.insert(QStringLiteral("groupName"), groupName);
+    resultData.insert(QStringLiteral("message"),
+                      accept ? QStringLiteral("你已加入「%1」").arg(groupName)
+                             : QStringLiteral("「%1」的加入申请被拒绝").arg(groupName));
+
+    QJsonObject result;
+    result.insert(QStringLiteral("type"), MsgType::kGroupJoinResult);
+    result.insert(QStringLiteral("ts"), nowMs());
+    result.insert(QStringLiteral("data"), resultData);
+    emit frameToUser(targetId, result);
+
+    replyData.insert(QStringLiteral("ok"), true);
+    replyData.insert(QStringLiteral("msg"),
+                     accept ? QStringLiteral("已同意入群申请") : QStringLiteral("已拒绝入群申请"));
     reply.insert(QStringLiteral("data"), replyData);
     session->sendFrame(reply);
     return true;

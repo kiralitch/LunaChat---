@@ -65,7 +65,9 @@ bool FriendHandler::handle(ClientSession *session, const QJsonObject &frame)
 {
     const QString type = frame.value(QStringLiteral("type")).toString();
     if (type != MsgType::kFriendRequest && type != MsgType::kFriendAccept
-        && type != MsgType::kFriendList) {
+        && type != MsgType::kFriendList && type != MsgType::kUserSearch
+        && type != MsgType::kFriendRequests && type != MsgType::kFriendReject
+        && type != MsgType::kFriendDelete) {
         return false;
     }
     if (session->userId() == 0) {
@@ -77,7 +79,124 @@ bool FriendHandler::handle(ClientSession *session, const QJsonObject &frame)
         return handleRequest(session, frame);
     if (type == MsgType::kFriendAccept)
         return handleAccept(session, frame);
+    if (type == MsgType::kUserSearch)
+        return handleSearch(session, frame);
+    if (type == MsgType::kFriendRequests)
+        return handleRequests(session, frame);
+    if (type == MsgType::kFriendReject)
+        return handleReject(session, frame);
+    if (type == MsgType::kFriendDelete)
+        return handleDelete(session, frame);
     return handleList(session, frame);
+}
+
+bool FriendHandler::handleRequests(ClientSession *session, const QJsonObject &)
+{
+    QJsonObject data;
+    data.insert(QStringLiteral("requests"),
+                DbManager::instance().pendingFriendRequests(session->userId()));
+
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kFriendRequestsResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), data);
+    session->sendFrame(reply);
+    return true;
+}
+
+bool FriendHandler::handleReject(ClientSession *session, const QJsonObject &frame)
+{
+    const quint64 fromUser = static_cast<quint64>(
+        frame.value(QStringLiteral("data")).toObject().value(QStringLiteral("fromUser")).toDouble());
+
+    if (fromUser == 0 || !DbManager::instance().rejectFriend(fromUser, session->userId())) {
+        sendResp(session, MsgType::kFriendRequests, false, QStringLiteral("拒绝申请失败"));
+        return true;
+    }
+
+    QJsonObject notifyData;
+    notifyData.insert(QStringLiteral("event"), QStringLiteral("rejected"));
+    notifyData.insert(QStringLiteral("fromUser"), static_cast<double>(session->userId()));
+    notifyData.insert(QStringLiteral("nickname"), session->nickname());
+    notifyData.insert(QStringLiteral("message"),
+                      QStringLiteral("%1 拒绝了你的好友申请").arg(session->nickname()));
+
+    QJsonObject notify;
+    notify.insert(QStringLiteral("type"), MsgType::kFriendNotify);
+    notify.insert(QStringLiteral("ts"), nowMs());
+    notify.insert(QStringLiteral("data"), notifyData);
+    emit frameToUser(fromUser, notify);
+
+    qInfo().noquote() << QStringLiteral("[friend] %1 rejected %2").arg(session->nickname()).arg(fromUser);
+    sendResp(session, MsgType::kFriendRequests, true, QStringLiteral("已拒绝好友申请"));
+    return true;
+}
+
+bool FriendHandler::handleDelete(ClientSession *session, const QJsonObject &frame)
+{
+    const quint64 targetId = static_cast<quint64>(
+        frame.value(QStringLiteral("data")).toObject().value(QStringLiteral("userId")).toDouble());
+
+    if (targetId == 0 || !DbManager::instance().areFriends(session->userId(), targetId)) {
+        sendResp(session, MsgType::kFriendDeleteResp, false, QStringLiteral("你们还不是好友"));
+        return true;
+    }
+    if (!DbManager::instance().removeFriend(session->userId(), targetId)) {
+        sendResp(session, MsgType::kFriendDeleteResp, false, QStringLiteral("删除好友失败"));
+        return true;
+    }
+
+    pushFriendList(session->userId());
+    pushFriendList(targetId);
+
+    QJsonObject notifyData;
+    notifyData.insert(QStringLiteral("event"), QStringLiteral("deleted"));
+    notifyData.insert(QStringLiteral("fromUser"), static_cast<double>(session->userId()));
+    notifyData.insert(QStringLiteral("nickname"), session->nickname());
+    notifyData.insert(QStringLiteral("message"),
+                      QStringLiteral("%1 把你从好友列表中删除了").arg(session->nickname()));
+
+    QJsonObject notify;
+    notify.insert(QStringLiteral("type"), MsgType::kFriendNotify);
+    notify.insert(QStringLiteral("ts"), nowMs());
+    notify.insert(QStringLiteral("data"), notifyData);
+    emit frameToUser(targetId, notify);
+
+    qInfo().noquote() << QStringLiteral("[friend] %1 deleted %2").arg(session->nickname()).arg(targetId);
+    sendResp(session, MsgType::kFriendDeleteResp, true, QStringLiteral("已删除好友"));
+    return true;
+}
+
+bool FriendHandler::handleSearch(ClientSession *session, const QJsonObject &frame)
+{
+    const QJsonObject data = frame.value(QStringLiteral("data")).toObject();
+    const QString keyword = data.value(QStringLiteral("keyword")).toString().trimmed();
+
+    QJsonArray users;
+    if (!keyword.isEmpty())
+        users = DbManager::instance().searchUsers(keyword, session->userId());
+    else
+        users = DbManager::instance().recommendUsers(session->userId());
+
+    // 附上"是否已经是好友"，客户端据此把按钮置灰
+    for (int i = 0; i < users.size(); ++i) {
+        QJsonObject item = users.at(i).toObject();
+        const quint64 userId = static_cast<quint64>(item.value(QStringLiteral("userId")).toDouble());
+        item.insert(QStringLiteral("friend"),
+                    DbManager::instance().areFriends(session->userId(), userId));
+        users.replace(i, item);
+    }
+
+    QJsonObject replyData;
+    replyData.insert(QStringLiteral("keyword"), keyword);
+    replyData.insert(QStringLiteral("users"), users);
+
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kUserSearchResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), replyData);
+    session->sendFrame(reply);
+    return true;
 }
 
 bool FriendHandler::handleRequest(ClientSession *session, const QJsonObject &frame)

@@ -1,7 +1,10 @@
 ﻿#include "UI/Windows/MainWindow.h"
 
 #include <QCoreApplication>
+#include <algorithm>
+#include <QColor>
 #include <QDateTime>
+#include <QDate>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -13,6 +16,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
+#include <QToolButton>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTimer>
@@ -20,6 +24,15 @@
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QtDebug>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <windowsx.h>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+#endif
 
 #include "Core/Recorder.h"
 #include "Core/SoundPlayer.h"
@@ -27,7 +40,14 @@
 #include "LunaProtocol/MessageTypes.h"
 #include "Network/LunaClient.h"
 #include "UI/Pages/ChatPage.h"
+#include "UI/Pages/AddFriendPage.h"
+#include "UI/Pages/CreateGroupPage.h"
+#include "UI/Pages/RequestsPage.h"
+#include "UI/Pages/GroupSearchPage.h"
+#include "UI/Widgets/BadgeButton.h"
+#include "UI/Widgets/ConfirmDialog.h"
 #include "UI/Pages/ProfilePage.h"
+#include "UI/Widgets/TitleBar.h"
 #include <QImage>
 #include <QPainter>
 #include <QPainterPath>
@@ -62,7 +82,22 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
     : QMainWindow(parent), m_client(client), m_userId(userId), m_nickname(nickname)
 {
     setWindowTitle(QStringLiteral("LunaChat 月之音 - %1").arg(nickname));
-    resize(1000, 660);
+    setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
+    setMinimumSize(920, 620);
+    resize(1080, 720);
+
+#ifdef Q_OS_WIN
+    // 无边框但保留系统缩放/贴边能力：加回 THICKFRAME，再用 WM_NCCALCSIZE 去掉非客户区
+    setAttribute(Qt::WA_NativeWindow);
+    {
+        const HWND hwnd = reinterpret_cast<HWND>(winId());
+        LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+        style |= WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+        SetWindowLongPtr(hwnd, GWL_STYLE, style);
+        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                     SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
+    }
+#endif
 
     m_newGroupButton = new QPushButton(this);
     m_newGroupButton->setIcon(QIcon(QStringLiteral(":/icons/group_new.png")));
@@ -76,6 +111,19 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
     m_addFriendButton->setFixedSize(40, 40);
     m_addFriendButton->setToolTip(QStringLiteral("加好友"));
     m_addFriendButton->setCursor(Qt::PointingHandCursor);
+    m_groupSearchButton = new QToolButton(this);
+    m_groupSearchButton->setIcon(QIcon(QStringLiteral(":/icons/search.png")));
+    m_groupSearchButton->setIconSize(QSize(24, 24));
+    m_groupSearchButton->setFixedSize(40, 40);
+    m_groupSearchButton->setObjectName(QStringLiteral("SidebarIconButton"));
+    m_groupSearchButton->setToolTip(QStringLiteral("搜索群聊"));
+    m_groupSearchButton->setCursor(Qt::PointingHandCursor);
+    m_requestsButton = new BadgeButton(this);
+    m_requestsButton->setIcon(QIcon(QStringLiteral(":/icons/requests.png")));
+    m_requestsButton->setIconSize(QSize(24, 24));
+    m_requestsButton->setFixedSize(40, 40);
+    m_requestsButton->setObjectName(QStringLiteral("SidebarIconButton"));
+    m_requestsButton->setToolTip(QStringLiteral("消息与申请"));
     m_sessionList = new QListWidget(this);
     m_sessionList->setFixedWidth(220);
     m_sessionList->setObjectName(QStringLiteral("ChannelList"));
@@ -95,6 +143,8 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
     groupRow->setSpacing(6);
     groupRow->addWidget(m_newGroupButton);
     groupRow->addWidget(m_addFriendButton);
+    groupRow->addWidget(m_groupSearchButton);
+    groupRow->addWidget(m_requestsButton);
     groupRow->addStretch();
 
     for (QPushButton *button : { m_newGroupButton, m_addFriendButton })
@@ -114,17 +164,26 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
 
     connect(m_rail, &IconRail::currentChanged, this, [this](const QString &id) {
         if (id == QStringLiteral("moments")) {
+            setSection(QStringLiteral("朋友圈"));
             m_mainStack->setCurrentWidget(m_momentPage);
             m_momentPage->refresh();
             return;
         }
 
         if (id == QStringLiteral("settings")) {
+            setSection(QStringLiteral("设置"));
             m_mainStack->setCurrentWidget(m_settingsPage);
             return;
         }
 
         // 其它页面都建立在"正常界面"上（设置页会盖住左栏）
+        if (id == QStringLiteral("chat"))
+            setSection(QStringLiteral("聊天"));
+        else if (id == QStringLiteral("match"))
+            setSection(QStringLiteral("随机匹配"));
+        else if (id == QStringLiteral("profile"))
+            setSection(QStringLiteral("个人资料"));
+
         m_mainStack->setCurrentWidget(m_mainStack->widget(0));
         if (id == QStringLiteral("chat")) {
             m_stack->setCurrentWidget(m_chatPage);
@@ -181,7 +240,79 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
     connect(m_groupFilesPage, &GroupFilesPage::backRequested, this, [this]() {
         m_mainStack->setCurrentWidget(m_mainStack->widget(0));
         m_stack->setCurrentWidget(m_chatPage);
+        setSection(QStringLiteral("聊天"));
         m_rail->setCurrent(QStringLiteral("chat"));
+    });
+
+    m_addFriendPage = new AddFriendPage(m_client, m_userId, this);
+    m_mainStack->addWidget(m_addFriendPage);
+    connect(m_addFriendPage, &AddFriendPage::backRequested, this, [this]() {
+        m_mainStack->setCurrentWidget(m_mainStack->widget(0));
+        m_stack->setCurrentWidget(m_chatPage);
+        setSection(QStringLiteral("聊天"));
+        m_rail->setCurrent(QStringLiteral("chat"));
+    });
+
+    m_createGroupPage = new CreateGroupPage(m_client, this);
+    m_mainStack->addWidget(m_createGroupPage);
+    connect(m_createGroupPage, &CreateGroupPage::backRequested, this, [this]() {
+        m_mainStack->setCurrentWidget(m_mainStack->widget(0));
+        m_stack->setCurrentWidget(m_chatPage);
+        setSection(QStringLiteral("聊天"));
+        m_rail->setCurrent(QStringLiteral("chat"));
+    });
+    connect(m_createGroupPage, &CreateGroupPage::groupCreated, this, [this](qint64 groupId, const QString &name) {
+        if (!name.isEmpty())
+            m_groups.insert(groupId, name);
+        refreshGroupList();
+        m_mainStack->setCurrentWidget(m_mainStack->widget(0));
+        m_stack->setCurrentWidget(m_chatPage);
+        setSection(QStringLiteral("聊天"));
+        m_rail->setCurrent(QStringLiteral("chat"));
+        selectConversation(keyOfGroup(groupId));
+    });
+
+    m_requestsPage = new RequestsPage(m_client, m_userId, this);
+    m_mainStack->addWidget(m_requestsPage);
+    connect(m_requestsPage, &RequestsPage::backRequested, this, [this]() {
+        m_mainStack->setCurrentWidget(m_mainStack->widget(0));
+        m_stack->setCurrentWidget(m_chatPage);
+        setSection(QStringLiteral("聊天"));
+        m_rail->setCurrent(QStringLiteral("chat"));
+    });
+    connect(m_requestsPage, &RequestsPage::countsChanged, this,
+            [this](int friendCount, int groupCount) {
+                if (m_requestsButton)
+                    m_requestsButton->setCount(friendCount + groupCount);
+            });
+    connect(m_requestsButton, &BadgeButton::clicked, this, &MainWindow::onOpenRequests);
+
+    m_groupSearchPage = new GroupSearchPage(m_client, m_userId, this);
+    m_mainStack->addWidget(m_groupSearchPage);
+    connect(m_groupSearchPage, &GroupSearchPage::backRequested, this, [this]() {
+        m_mainStack->setCurrentWidget(m_mainStack->widget(0));
+        m_stack->setCurrentWidget(m_chatPage);
+        setSection(QStringLiteral("聊天"));
+        m_rail->setCurrent(QStringLiteral("chat"));
+    });
+    connect(m_groupSearchButton, &QToolButton::clicked, this, &MainWindow::onOpenGroupSearch);
+
+    // 页面切换统一淡入，避免硬切
+    connect(m_mainStack, &QStackedWidget::currentChanged, this, [this](int) {
+        QWidget *page = m_mainStack->currentWidget();
+        if (!page)
+            return;
+        auto *effect = new QGraphicsOpacityEffect(page);
+        page->setGraphicsEffect(effect);
+        effect->setOpacity(0.0);
+        auto *anim = new QPropertyAnimation(effect, "opacity", page);
+        anim->setDuration(180);
+        anim->setStartValue(0.0);
+        anim->setEndValue(1.0);
+        connect(anim, &QPropertyAnimation::finished, page, [page]() {
+            page->setGraphicsEffect(nullptr);
+        });
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
     });
     connect(m_settingsPage, &SettingsPage::backRequested, this, [this]() {
         m_mainStack->setCurrentWidget(m_mainStack->widget(0));
@@ -190,20 +321,32 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
     });
 
     auto *central = new QWidget(this);
-    auto *centralLayout = new QHBoxLayout(central);
+    auto *centralLayout = new QVBoxLayout(central);
     centralLayout->setContentsMargins(0, 0, 0, 0);
     centralLayout->setSpacing(0);
-    centralLayout->addWidget(m_rail);
-    centralLayout->addWidget(m_mainStack, 1);
+
+    m_titleBar = new TitleBar(this, QStringLiteral("LunaChat 月之音"));
+    centralLayout->addWidget(m_titleBar);
+
+    auto *content = new QWidget(central);
+    auto *contentLayout = new QHBoxLayout(content);
+    contentLayout->setContentsMargins(0, 0, 0, 0);
+    contentLayout->setSpacing(0);
+    contentLayout->addWidget(m_rail);
+    contentLayout->addWidget(m_mainStack, 1);
+    centralLayout->addWidget(content, 1);
+
     setCentralWidget(central);
 
     // 页面顶部返回箭头：回到聊天（并把左侧图标栏复位）
     connect(m_groupInfoPage, &GroupInfoPage::backRequested, this, [this]() {
         m_stack->setCurrentWidget(m_chatPage);
+        setSection(QStringLiteral("聊天"));
         m_rail->setCurrent(QStringLiteral("chat"));
     });
     connect(m_activityPage, &ActivityPage::backRequested, this, [this]() {
         m_stack->setCurrentWidget(m_chatPage);
+        setSection(QStringLiteral("聊天"));
         m_rail->setCurrent(QStringLiteral("chat"));
     });
 
@@ -227,6 +370,18 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
     connect(m_chatPage, &ChatPage::groupActivityRequested, this, &MainWindow::onOpenActivities);
     connect(m_chatPage, &ChatPage::groupInviteRequested, this, &MainWindow::onInviteMember);
     connect(m_chatPage, &ChatPage::groupFilesRequested, this, &MainWindow::onOpenGroupFiles);
+    connect(m_chatPage, &ChatPage::privateSettingsRequested, this, [this](quint64 peerId) {
+        requestDeleteFriend(peerId, m_friendNames.value(peerId));
+    });
+    connect(m_chatPage, &ChatPage::recallRequested, this, [this](qint64 msgId) {
+        QJsonObject data;
+        data.insert(QStringLiteral("msgId"), static_cast<double>(msgId));
+        QJsonObject frame;
+        frame.insert(QStringLiteral("type"), MsgType::kChatRecall);
+        frame.insert(QStringLiteral("ts"), static_cast<double>(QDateTime::currentMSecsSinceEpoch()));
+        frame.insert(QStringLiteral("data"), data);
+        m_client->sendFrame(frame);
+    });
     connect(m_chatPage, &ChatPage::avatarContextMenuRequested, this,
             [this](quint64 userId, const QPoint &globalPos) {
                 if (userId == 0 || userId == m_userId)
@@ -282,7 +437,26 @@ MainWindow::MainWindow(LunaClient *client, quint64 userId, const QString &nickna
     connect(m_client, &LunaClient::frameReceived, this, &MainWindow::onFrameReceived);
 
     statusBar()->showMessage(QStringLiteral("已登录：%1 (userId=%2)").arg(nickname).arg(userId));
+
+#ifdef Q_OS_WIN
+    // Windows 10/11：标题栏跟随深色主题，避免白色边框和夜紫界面割裂
+    const BOOL darkTitle = TRUE;
+    const HWND nativeHandle = reinterpret_cast<HWND>(winId());
+    if (FAILED(DwmSetWindowAttribute(nativeHandle, 20, &darkTitle, sizeof(darkTitle))))
+        DwmSetWindowAttribute(nativeHandle, 19, &darkTitle, sizeof(darkTitle));
+
+    // Windows 11：无边框窗口也请求圆角（Win10 会忽略）
+    const DWORD cornerPreference = 2;   // DWMWCP_ROUND
+    DwmSetWindowAttribute(nativeHandle, 33, &cornerPreference, sizeof(cornerPreference));
+#endif
+
     refreshGroupList();
+
+    QJsonObject friendReq;
+    friendReq.insert(QStringLiteral("type"), MsgType::kFriendList);
+    friendReq.insert(QStringLiteral("ts"), static_cast<double>(QDateTime::currentMSecsSinceEpoch()));
+    friendReq.insert(QStringLiteral("data"), QJsonObject());
+    m_client->sendFrame(friendReq);
 }
 
 MainWindow::~MainWindow()
@@ -327,6 +501,7 @@ void MainWindow::onSessionItemChanged()
 void MainWindow::selectConversation(const QString &key)
 {
     m_rail->setCurrent(QStringLiteral("chat"));   // 选会话即回到聊天界面
+    setSection(QStringLiteral("聊天"));
     if (key.isEmpty() || key == m_currentKey)
         return;
 
@@ -349,7 +524,9 @@ void MainWindow::selectConversation(const QString &key)
         m_client->sendFrame(makeFrame(MsgType::kGroupAvatarGet, infoReq));
     } else {
         const quint64 peerId = key.mid(1).toULongLong();
-        QString nickname = m_users.value(peerId);
+        QString nickname = m_friendNames.value(peerId);
+        if (nickname.isEmpty())
+            nickname = m_users.value(peerId);
         if (nickname.isEmpty())
             nickname = QStringLiteral("用户 %1").arg(peerId);
         m_chatPage->openPrivate(peerId, nickname);
@@ -407,21 +584,9 @@ void MainWindow::onSendRequested(const QString &text)
 
 void MainWindow::onCreateGroup()
 {
-    bool ok = false;
-    const QString name = QInputDialog::getText(this, QStringLiteral("新建群组"),
-                                               QStringLiteral("群名称（1-32 字）："),
-                                               QLineEdit::Normal, QString(), &ok);
-    if (!ok || name.trimmed().isEmpty())
-        return;
-
-    QJsonObject data;
-    data.insert(QStringLiteral("name"), name.trimmed());
-
-    QJsonObject frame;
-    frame.insert(QStringLiteral("type"), MsgType::kGroupCreate);
-    frame.insert(QStringLiteral("ts"), static_cast<double>(QDateTime::currentMSecsSinceEpoch()));
-    frame.insert(QStringLiteral("data"), data);
-    m_client->sendFrame(frame);
+    setSection(QStringLiteral("新建群聊"));
+    m_createGroupPage->reset();
+    m_mainStack->setCurrentWidget(m_createGroupPage);
 }
 
 void MainWindow::onOpenActivities()
@@ -433,6 +598,7 @@ void MainWindow::onOpenActivities()
         return;
     }
     const QString role = m_groupRole.value(groupId);
+    setSection(QStringLiteral("群活动"));
     m_activityPage->setGroup(groupId, role == QStringLiteral("owner") || role == QStringLiteral("admin"));
     m_stack->setCurrentWidget(m_activityPage);
 }
@@ -516,6 +682,7 @@ void MainWindow::onOpenGroupFiles()
         return;
     }
     const QString role = m_groupRole.value(groupId);
+    setSection(QStringLiteral("共享文件夹"));
     m_groupFilesPage->setGroup(groupId,
                                role == QStringLiteral("owner") || role == QStringLiteral("admin"));
     m_mainStack->setCurrentWidget(m_groupFilesPage);
@@ -528,6 +695,7 @@ void MainWindow::onOpenGroupInfo()
         appendSystemLine(QStringLiteral("请先在左侧选择一个群组"));
         return;
     }
+    setSection(QStringLiteral("群资料"));
     m_groupInfoPage->setGroup(groupId, m_groupRole.value(groupId));
     m_stack->setCurrentWidget(m_groupInfoPage);
 }
@@ -539,26 +707,11 @@ void MainWindow::onInviteMember()
         return;
     }
 
-    QStringList names;
-    QList<quint64> ids;
-    for (auto it = m_friendNames.constBegin(); it != m_friendNames.constEnd(); ++it) {
-        names << it.value();
-        ids << it.key();
-    }
-    if (names.isEmpty()) {
-        appendSystemLine(QStringLiteral("还没有好友可以邀请"));
-        return;
-    }
-
-    bool ok = false;
-    const QString chosen = QInputDialog::getItem(this, QStringLiteral("邀请成员"),
-                                                 QStringLiteral("选择要拉进群的好友："),
-                                                 names, 0, false, &ok);
-    if (!ok)
-        return;
-    const int index = names.indexOf(chosen);
-    if (index >= 0)
-        inviteUser(m_currentKey.mid(1).toLongLong(), ids.at(index));
+    const qint64 groupId = m_currentKey.mid(1).toLongLong();
+    setSection(QStringLiteral("邀请成员"));
+    m_addFriendPage->setInviteGroup(groupId, m_groups.value(groupId));
+    m_addFriendPage->reset();
+    m_mainStack->setCurrentWidget(m_addFriendPage);
 }
 
 void MainWindow::onLeaveGroup()
@@ -583,29 +736,61 @@ void MainWindow::onLeaveGroup()
     m_client->sendFrame(frame);
 }
 
+void MainWindow::onOpenRequests()
+{
+    setSection(QStringLiteral("消息与申请"));
+    m_requestsPage->refreshAll();
+    m_mainStack->setCurrentWidget(m_requestsPage);
+}
+
+void MainWindow::onOpenGroupSearch()
+{
+    setSection(QStringLiteral("搜索群聊"));
+    m_groupSearchPage->refresh();
+    m_mainStack->setCurrentWidget(m_groupSearchPage);
+}
+
 void MainWindow::onAddFriend()
 {
-    bool ok = false;
-    const QString username = QInputDialog::getText(
-        this, QStringLiteral("添加好友"), QStringLiteral("输入对方的用户名或昵称："),
-        QLineEdit::Normal, QString(), &ok);
-    if (!ok || username.trimmed().isEmpty())
-        return;
-
-    QJsonObject data;
-    data.insert(QStringLiteral("username"), username.trimmed());
-    QJsonObject frame;
-    frame.insert(QStringLiteral("type"), MsgType::kFriendRequest);
-    frame.insert(QStringLiteral("ts"), static_cast<double>(QDateTime::currentMSecsSinceEpoch()));
-    frame.insert(QStringLiteral("data"), data);
-    m_client->sendFrame(frame);
-    appendSystemLine(QStringLiteral("好友申请已发送给 %1").arg(username.trimmed()));
+    setSection(QStringLiteral("添加好友"));
+    m_addFriendPage->setInviteGroup(0, QString());
+    m_addFriendPage->reset();
+    m_mainStack->setCurrentWidget(m_addFriendPage);
 }
 
 void MainWindow::onOpenProfile()
 {
     m_mainStack->setCurrentWidget(m_profilePage);
     m_profilePage->refresh();
+}
+
+void MainWindow::setSection(const QString &name)
+{
+    if (m_titleBar)
+        m_titleBar->setSection(name);
+}
+
+void MainWindow::requestDeleteFriend(quint64 userId, const QString &nickname)
+{
+    if (userId == 0)
+        return;
+
+    const QString name = nickname.isEmpty() ? QString::number(userId) : nickname;
+    if (!ConfirmDialog::ask(this, QStringLiteral("删除好友"),
+                            QStringLiteral("确定删除好友「%1」吗？\n"
+                                           "删除后将从双方好友列表移除，聊天记录不会删除。")
+                                .arg(name),
+                            QStringLiteral("删除")))
+        return;
+
+    QJsonObject data;
+    data.insert(QStringLiteral("userId"), static_cast<double>(userId));
+    QJsonObject frame;
+    frame.insert(QStringLiteral("type"), MsgType::kFriendDelete);
+    frame.insert(QStringLiteral("ts"), static_cast<double>(QDateTime::currentMSecsSinceEpoch()));
+    frame.insert(QStringLiteral("data"), data);
+    m_client->sendFrame(frame);
+    appendSystemLine(QStringLiteral("正在删除好友 %1…").arg(name));
 }
 
 void MainWindow::onOpenSettings()
@@ -616,6 +801,7 @@ void MainWindow::onOpenSettings()
 
 void MainWindow::onOpenMatch()
 {
+    setSection(QStringLiteral("随机匹配"));
     m_mainStack->setCurrentWidget(m_matchPage);
 }
 
@@ -671,6 +857,14 @@ void MainWindow::onContextMenu(const QPoint &pos)
                 inviteUser(groupId, targetId);
             });
         }
+    }
+
+    if (m_friendIds.contains(targetId)) {
+        menu.addSeparator();
+        QAction *removeFriend = menu.addAction(QStringLiteral("删除好友"));
+        connect(removeFriend, &QAction::triggered, this, [this, targetId, item]() {
+            requestDeleteFriend(targetId, item->text());
+        });
     }
 
     menu.exec(m_sessionList->mapToGlobal(pos));
@@ -1049,7 +1243,8 @@ void MainWindow::appendToConversation(const QString &key, const MessageLine &lin
 {
     m_messages[key].append(line);
     if (key == m_currentKey)
-        m_chatPage->appendMessage(line.userId, line.nickname, line.content, line.self, line.timeText);
+        m_chatPage->appendMessage(line.userId, line.nickname, line.content, line.self,
+                                  line.timeText, line.dateKey, line.msgId);
     requestAvatar(line.userId);
 }
 
@@ -1074,6 +1269,8 @@ void MainWindow::handleChatBroadcast(const QJsonObject &frame)
     line.content = data.value(QStringLiteral("content")).toString();
     line.self = (fromUser == m_userId);
     line.timeText = nowTimeText();
+    line.dateKey = QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd"));
+    line.msgId = static_cast<qint64>(data.value(QStringLiteral("msgId")).toDouble());
     appendToConversation(key, line);
 
     if (key != m_currentKey && !line.self)
@@ -1093,6 +1290,7 @@ void MainWindow::onFrameReceived(const QJsonObject &frame)
         line.content = QStringLiteral("[群文件] %1（已存入群共享文件夹）").arg(fileName);
         line.self = (line.userId == m_userId);
         line.timeText = nowTimeText();
+        line.dateKey = QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd"));
         const QString key = keyOfGroup(static_cast<qint64>(shareData.value(QStringLiteral("groupId")).toDouble()));
         appendToConversation(key, line);
         appendSystemLine(QStringLiteral("群文件已保存：%1").arg(shareData.value(QStringLiteral("savedPath")).toString()));
@@ -1132,28 +1330,43 @@ void MainWindow::onFrameReceived(const QJsonObject &frame)
     if (type == MsgType::kFriendNotify) {
         const QJsonObject friendData = frame.value(QStringLiteral("data")).toObject();
         const QString event = friendData.value(QStringLiteral("event")).toString();
-        const quint64 fromUser = static_cast<quint64>(friendData.value(QStringLiteral("fromUser")).toDouble());
+        appendSystemLine(friendData.value(QStringLiteral("message")).toString());
+
         if (event == QStringLiteral("request")) {
-            const QString who = friendData.value(QStringLiteral("nickname")).toString();
-            if (QMessageBox::question(this, QStringLiteral("好友申请"),
-                                      QStringLiteral("%1 请求加你为好友，是否接受？").arg(who))
-                == QMessageBox::Yes) {
-                QJsonObject accept;
-                accept.insert(QStringLiteral("fromUser"), static_cast<double>(fromUser));
-                QJsonObject frame2;
-                frame2.insert(QStringLiteral("type"), MsgType::kFriendAccept);
-                frame2.insert(QStringLiteral("ts"), static_cast<double>(QDateTime::currentMSecsSinceEpoch()));
-                frame2.insert(QStringLiteral("data"), accept);
-                m_client->sendFrame(frame2);
-            }
+            m_requestsPage->refreshAll();
         } else {
-            appendSystemLine(friendData.value(QStringLiteral("message")).toString());
+            if (event == QStringLiteral("deleted")) {
+                const quint64 fromUser = static_cast<quint64>(
+                    friendData.value(QStringLiteral("fromUser")).toDouble());
+                m_friendIds.remove(fromUser);
+                m_friendNames.remove(fromUser);
+                if (m_currentKey == keyOfUser(fromUser)) {
+                    m_currentKey.clear();
+                    m_chatPage->clearMessages();
+                    if (!m_groups.isEmpty())
+                        selectConversation(keyOfGroup(m_groups.firstKey()));
+                }
+            }
             QJsonObject refresh;
             refresh.insert(QStringLiteral("type"), MsgType::kFriendList);
             refresh.insert(QStringLiteral("ts"), static_cast<double>(QDateTime::currentMSecsSinceEpoch()));
             refresh.insert(QStringLiteral("data"), QJsonObject());
             m_client->sendFrame(refresh);
         }
+        return;
+    }
+
+    if (type == MsgType::kFriendDeleteResp) {
+        const QJsonObject deleteData = frame.value(QStringLiteral("data")).toObject();
+        appendSystemLine(deleteData.value(QStringLiteral("msg")).toString());
+        return;
+    }
+
+    if (type == MsgType::kGroupJoinNotify || type == MsgType::kGroupJoinResult) {
+        const QJsonObject joinData = frame.value(QStringLiteral("data")).toObject();
+        appendSystemLine(joinData.value(QStringLiteral("message")).toString());
+        if (m_requestsPage)
+            m_requestsPage->refreshAll();
         return;
     }
 
@@ -1264,6 +1477,23 @@ void MainWindow::onFrameReceived(const QJsonObject &frame)
         return;
     }
 
+    if (type == MsgType::kChatRecall) {
+        const qint64 msgId = static_cast<qint64>(
+            frame.value(QStringLiteral("data")).toObject().value(QStringLiteral("msgId")).toDouble());
+        m_chatPage->markRecalled(msgId);
+        for (MessageLine &line : m_messages[m_currentKey]) {
+            if (line.msgId == msgId)
+                line.content = QStringLiteral("该消息已撤回");
+        }
+        return;
+    }
+
+    if (type == MsgType::kChatRecallResp) {
+        appendSystemLine(frame.value(QStringLiteral("data")).toObject()
+                             .value(QStringLiteral("msg")).toString());
+        return;
+    }
+
     if (type == MsgType::kChatBroadcast) {
         handleChatBroadcast(frame);
         return;
@@ -1295,8 +1525,12 @@ void MainWindow::onFrameReceived(const QJsonObject &frame)
             line.userId = static_cast<quint64>(item.value(QStringLiteral("fromUser")).toDouble());
             line.nickname = item.value(QStringLiteral("nickname")).toString();
             line.content = item.value(QStringLiteral("content")).toString();
+            if (item.value(QStringLiteral("recalled")).toBool())
+                line.content = QStringLiteral("该消息已撤回");
+            line.msgId = static_cast<qint64>(item.value(QStringLiteral("msgId")).toDouble());
             line.self = (static_cast<quint64>(item.value(QStringLiteral("fromUser")).toDouble()) == m_userId);
             line.timeText = item.value(QStringLiteral("createdAt")).toString().mid(11, 5);
+            line.dateKey = item.value(QStringLiteral("createdAt")).toString().left(10);
             lines.append(line);
         }
         m_messages[key] = lines;
@@ -1305,7 +1539,8 @@ void MainWindow::onFrameReceived(const QJsonObject &frame)
         if (key == m_currentKey) {
             m_chatPage->clearMessages();
             for (const MessageLine &line : lines) {
-    m_chatPage->appendMessage(line.userId, line.nickname, line.content, line.self, line.timeText);
+            m_chatPage->appendMessage(line.userId, line.nickname, line.content, line.self,
+                                      line.timeText, line.dateKey, line.msgId);
     requestAvatar(line.userId);
 }
         }
@@ -1395,8 +1630,30 @@ void MainWindow::rebuildConversationList()
         item->setData(Qt::UserRole, keyOfGroup(groupId));
     }
 
+    // 好友：在线优先、离线也保留；离线用 ○ 和灰色文字区分
+    QList<quint64> friendIds = m_friendNames.keys();
+    std::sort(friendIds.begin(), friendIds.end(), [this](quint64 a, quint64 b) {
+        const bool onlineA = m_users.contains(a);
+        const bool onlineB = m_users.contains(b);
+        if (onlineA != onlineB)
+            return onlineA;
+        return m_friendNames.value(a).localeAwareCompare(m_friendNames.value(b)) < 0;
+    });
+    for (quint64 friendId : friendIds) {
+        const bool online = m_users.contains(friendId);
+        auto *item = new QListWidgetItem(
+            QStringLiteral("%1 %2").arg(online ? QStringLiteral("●") : QStringLiteral("○"),
+                                        m_friendNames.value(friendId)),
+            m_sessionList);
+        item->setData(Qt::UserRole, keyOfUser(friendId));
+        item->setToolTip(online ? QStringLiteral("在线") : QStringLiteral("离线"));
+        if (!online)
+            item->setForeground(QColor(0x8A, 0x82, 0xA8));
+    }
+
+    // 在线的非好友用户继续保留在列表末尾（方便临时私聊）
     for (auto it = m_users.constBegin(); it != m_users.constEnd(); ++it) {
-        if (it.key() == m_userId)
+        if (it.key() == m_userId || m_friendNames.contains(it.key()))
             continue;
         auto *item = new QListWidgetItem(QStringLiteral("● %1").arg(it.value()), m_sessionList);
         item->setData(Qt::UserRole, keyOfUser(it.key()));
@@ -1421,4 +1678,39 @@ void MainWindow::rebuildConversationList()
 
     if (!wantKey.isEmpty())
         selectConversation(wantKey);
+}
+
+bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, long *result)
+{
+#ifdef Q_OS_WIN
+    if (eventType == QByteArrayLiteral("windows_generic_MSG")) {
+        auto *msg = static_cast<MSG *>(message);
+        if (msg->message == WM_NCCALCSIZE && msg->wParam == TRUE) {
+            *result = 0;
+            return true;
+        }
+        if (msg->message == WM_NCHITTEST && !isMaximized()) {
+            const int screenX = GET_X_LPARAM(msg->lParam);
+            const int screenY = GET_Y_LPARAM(msg->lParam);
+            POINT pt{ screenX, screenY };
+            ScreenToClient(reinterpret_cast<HWND>(winId()), &pt);
+
+            const int border = 6;
+            const bool left = pt.x < border;
+            const bool right = pt.x >= width() - border;
+            const bool top = pt.y < border;
+            const bool bottom = pt.y >= height() - border;
+
+            if (top && left) { *result = HTTOPLEFT; return true; }
+            if (top && right) { *result = HTTOPRIGHT; return true; }
+            if (bottom && left) { *result = HTBOTTOMLEFT; return true; }
+            if (bottom && right) { *result = HTBOTTOMRIGHT; return true; }
+            if (left) { *result = HTLEFT; return true; }
+            if (right) { *result = HTRIGHT; return true; }
+            if (top) { *result = HTTOP; return true; }
+            if (bottom) { *result = HTBOTTOM; return true; }
+        }
+    }
+#endif
+    return QMainWindow::nativeEvent(eventType, message, result);
 }

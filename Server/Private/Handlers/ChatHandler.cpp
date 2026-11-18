@@ -29,7 +29,7 @@ bool ChatHandler::handle(ClientSession *session, const QJsonObject &frame)
 
     // 权限校验：未登录连接不允许发业务帧（心跳由 LunaServer 先处理）
     if (type == MsgType::kChatGroup || type == MsgType::kChatPrivate
-        || type == MsgType::kChatHistory) {
+        || type == MsgType::kChatHistory || type == MsgType::kChatRecall) {
         if (session->userId() == 0) {
             sendError(session, 401, QStringLiteral("请先登录"));
             return true;
@@ -42,7 +42,58 @@ bool ChatHandler::handle(ClientSession *session, const QJsonObject &frame)
         return handlePrivate(session, frame);
     if (type == MsgType::kChatHistory)
         return handleHistory(session, frame);
+    if (type == MsgType::kChatRecall)
+        return handleRecall(session, frame);
     return false;
+}
+
+bool ChatHandler::handleRecall(ClientSession *session, const QJsonObject &frame)
+{
+    const qint64 msgId = static_cast<qint64>(
+        frame.value(QStringLiteral("data")).toObject().value(QStringLiteral("msgId")).toDouble());
+
+    const QJsonObject info = DbManager::instance().messageInfo(msgId);
+    const quint64 fromUser = static_cast<quint64>(info.value(QStringLiteral("fromUser")).toDouble());
+    if (msgId <= 0 || fromUser != session->userId()) {
+        sendError(session, 403, QStringLiteral("只能撤回自己发送的消息"));
+        return true;
+    }
+
+    if (!DbManager::instance().recallMessage(msgId, session->userId())) {
+        sendError(session, 400, QStringLiteral("超过两分钟，无法撤回"));
+        return true;
+    }
+
+    QJsonObject notifyData;
+    notifyData.insert(QStringLiteral("msgId"), static_cast<double>(msgId));
+    notifyData.insert(QStringLiteral("fromUser"), static_cast<double>(session->userId()));
+
+    QJsonObject notify;
+    notify.insert(QStringLiteral("type"), MsgType::kChatRecall);
+    notify.insert(QStringLiteral("ts"), nowMs());
+    notify.insert(QStringLiteral("data"), notifyData);
+
+    const qint64 groupId = static_cast<qint64>(info.value(QStringLiteral("groupId")).toDouble());
+    const quint64 toUser = static_cast<quint64>(info.value(QStringLiteral("toUser")).toDouble());
+    if (groupId > 0) {
+        emit frameToGroup(groupId, notify);
+    } else {
+        if (toUser > 0)
+            emit frameToUser(toUser, notify);
+        emit frameToUser(session->userId(), notify);
+    }
+
+    QJsonObject replyData;
+    replyData.insert(QStringLiteral("ok"), true);
+    replyData.insert(QStringLiteral("msg"), QStringLiteral("消息已撤回"));
+    QJsonObject reply;
+    reply.insert(QStringLiteral("type"), MsgType::kChatRecallResp);
+    reply.insert(QStringLiteral("ts"), nowMs());
+    reply.insert(QStringLiteral("data"), replyData);
+    session->sendFrame(reply);
+
+    qInfo().noquote() << QStringLiteral("[chat] recall msg %1 by %2").arg(msgId).arg(session->nickname());
+    return true;
 }
 
 void ChatHandler::sendError(ClientSession *session, int code, const QString &message)

@@ -1,4 +1,5 @@
 ﻿#include <QApplication>
+#include <QIcon>
 #include <QLibraryInfo>
 #include <QTranslator>
 #include <QtDebug>
@@ -22,6 +23,7 @@ int main(int argc, char *argv[])
     }
     QCoreApplication::setOrganizationName(QStringLiteral("LunaChat"));
     QCoreApplication::setApplicationName(QStringLiteral("LunaChat"));
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/logo.png")));
 
     // 阶段10 临时入口：设置 LUNA_AUDIO_PROBE=1 时只打印音频能力并退出
     if (qEnvironmentVariableIsSet("LUNA_AUDIO_PROBE")) {

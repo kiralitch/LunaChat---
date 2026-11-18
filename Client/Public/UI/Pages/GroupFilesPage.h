@@ -9,6 +9,7 @@ class LunaClient;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QStackedLayout;
 class QToolButton;
 
 // 群共享文件夹页面（覆盖左栏，网盘式布局：搜索 + 新建文件夹 + 列表）
@@ -49,4 +50,6 @@ private:
     QToolButton *m_upload = nullptr;
     QListWidget *m_list = nullptr;
     QLabel *m_status = nullptr;
+    QStackedLayout *m_listStack = nullptr;
+    QWidget *m_empty = nullptr;
 };

@@ -11,6 +11,7 @@ IconRail::IconRail(QWidget *parent)
     : QWidget(parent)
 {
     setObjectName(QStringLiteral("IconRail"));
+    setAttribute(Qt::WA_StyledBackground, true);
     setFixedWidth(60);
 
     // 滑动的选中背景：先创建，后创建的按钮会盖在它上面

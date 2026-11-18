@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <QDialog>
 #include <QFileDialog>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QImage>
 #include <QJsonArray>
@@ -65,13 +66,22 @@ GroupInfoPage::GroupInfoPage(LunaClient *client, quint64 selfId, QWidget *parent
     m_avatarLabel->setFixedSize(84, 84);
     m_avatarLabel->setAlignment(Qt::AlignCenter);
 
+    m_nameEdit = new QLineEdit(this);
+
     auto *pickAvatar = new QPushButton(QStringLiteral("更换群头像"), this);
     auto *avatarRow = new QHBoxLayout;
-    avatarRow->addWidget(m_avatarLabel);
-    avatarRow->addWidget(pickAvatar);
-    avatarRow->addStretch();
+    avatarRow->setSpacing(16);
+    avatarRow->addWidget(m_avatarLabel, 0, Qt::AlignTop);
 
-    m_nameEdit = new QLineEdit(this);
+    auto *nameCol = new QVBoxLayout;
+    nameCol->setSpacing(6);
+    auto *nameCaption = new QLabel(QStringLiteral("群名称"), this);
+    nameCaption->setObjectName(QStringLiteral("LoginCaption"));
+    nameCol->addWidget(nameCaption);
+    nameCol->addWidget(m_nameEdit);
+    nameCol->addWidget(pickAvatar, 0, Qt::AlignLeft);
+    avatarRow->addLayout(nameCol, 1);
+
     m_announcementEdit = new QTextEdit(this);
     m_announcementEdit->setMaximumHeight(90);
     m_folderEdit = new QLineEdit(this);
@@ -84,6 +94,7 @@ GroupInfoPage::GroupInfoPage(LunaClient *client, quint64 selfId, QWidget *parent
     m_statusLabel->setObjectName(QStringLiteral("ChatSubtitle"));
 
     auto *saveButton = new QPushButton(QStringLiteral("保存资料"), this);
+    saveButton->setObjectName(QStringLiteral("PrimaryButton"));
     auto *transferButton = new QPushButton(QStringLiteral("转让群主给选中成员"), this);
     auto *leaveButton = new QPushButton(QStringLiteral("退出该群"), this);
     auto *dissolveButton = new QPushButton(QStringLiteral("解散该群"), this);
@@ -100,9 +111,11 @@ GroupInfoPage::GroupInfoPage(LunaClient *client, quint64 selfId, QWidget *parent
     buttonRow->addWidget(leaveButton);
     buttonRow->addWidget(dissolveButton);
 
-    auto *layout = new QVBoxLayout(this);
+    auto *pageTitle = new QLabel(QStringLiteral("群资料"), this);
+    pageTitle->setObjectName(QStringLiteral("ChatTitle"));
+    auto *pageHint = new QLabel(QStringLiteral("群头像、公告、成员与共享文件"), this);
+    pageHint->setObjectName(QStringLiteral("ChatSubtitle"));
 
-    // 顶部返回栏（图标 + 页面标题）
     m_backButton = new QToolButton(this);
     m_backButton->setObjectName(QStringLiteral("PageBackButton"));
     m_backButton->setIcon(QIcon(QStringLiteral(":/icons/back.png")));
@@ -113,34 +126,59 @@ GroupInfoPage::GroupInfoPage(LunaClient *client, quint64 selfId, QWidget *parent
     m_backButton->setToolTip(QStringLiteral("返回聊天"));
     connect(m_backButton, &QToolButton::clicked, this, &GroupInfoPage::backRequested);
 
+    auto *titleBox = new QVBoxLayout;
+    titleBox->setContentsMargins(0, 0, 0, 0);
+    titleBox->setSpacing(0);
+    titleBox->addWidget(pageTitle);
+    titleBox->addWidget(pageHint);
+
     auto *pageHeader = new QHBoxLayout;
     pageHeader->setContentsMargins(0, 0, 0, 4);
     pageHeader->addWidget(m_backButton);
-    auto *pageTitle = new QLabel(QStringLiteral("群资料"), this);
-    pageTitle->setObjectName(QStringLiteral("ChatTitle"));
-    pageHeader->addWidget(pageTitle);
-    pageHeader->addStretch();
-    layout->addLayout(pageHeader);
-    layout->setContentsMargins(12, 10, 12, 10);
-    layout->addLayout(avatarRow);
-    layout->addWidget(new QLabel(QStringLiteral("群名称"), this));
-    layout->addWidget(m_nameEdit);
-    layout->addWidget(new QLabel(QStringLiteral("群公告"), this));
-    layout->addWidget(m_announcementEdit);
-    layout->addWidget(new QLabel(QStringLiteral("共享文件夹"), this));
-    layout->addWidget(m_folderEdit);
+    pageHeader->addLayout(titleBox, 1);
 
-    auto *lists = new QHBoxLayout;
+    auto caption = [this](const QString &text) {
+        auto *label = new QLabel(text, this);
+        label->setObjectName(QStringLiteral("LoginCaption"));
+        return label;
+    };
+
+    auto *identityCard = new QFrame(this);
+    identityCard->setObjectName(QStringLiteral("SettingsCard"));
+    auto *identityLayout = new QVBoxLayout(identityCard);
+    identityLayout->setContentsMargins(20, 18, 20, 18);
+    identityLayout->setSpacing(8);
+    identityLayout->addLayout(avatarRow);
+    identityLayout->addWidget(caption(QStringLiteral("群公告")));
+    identityLayout->addWidget(m_announcementEdit);
+    identityLayout->addWidget(caption(QStringLiteral("共享文件夹")));
+    identityLayout->addWidget(m_folderEdit);
+
+    auto *listsCard = new QFrame(this);
+    listsCard->setObjectName(QStringLiteral("SettingsCard"));
+    auto *lists = new QHBoxLayout(listsCard);
+    lists->setContentsMargins(20, 16, 20, 16);
+    lists->setSpacing(20);
+
     auto *memberBox = new QVBoxLayout;
-    memberBox->addWidget(new QLabel(QStringLiteral("群成员"), this));
+    memberBox->setSpacing(6);
+    memberBox->addWidget(caption(QStringLiteral("群成员")));
     memberBox->addWidget(m_memberList, 1);
+
     auto *fileBox = new QVBoxLayout;
-    fileBox->addWidget(new QLabel(QStringLiteral("已共享文件"), this));
+    fileBox->setSpacing(6);
+    fileBox->addWidget(caption(QStringLiteral("已共享文件")));
     fileBox->addWidget(m_fileList, 1);
+
     lists->addLayout(memberBox, 1);
     lists->addLayout(fileBox, 1);
-    layout->addLayout(lists, 1);
 
+    auto *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(18, 8, 18, 14);
+    layout->setSpacing(12);
+    layout->addLayout(pageHeader);
+    layout->addWidget(identityCard);
+    layout->addWidget(listsCard, 1);
     layout->addWidget(m_statusLabel);
     layout->addLayout(buttonRow);
 

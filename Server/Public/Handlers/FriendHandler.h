@@ -25,6 +25,10 @@ private:
     bool handleRequest(ClientSession *session, const QJsonObject &frame);
     bool handleAccept(ClientSession *session, const QJsonObject &frame);
     bool handleList(ClientSession *session, const QJsonObject &frame);
+    bool handleSearch(ClientSession *session, const QJsonObject &frame);
+    bool handleRequests(ClientSession *session, const QJsonObject &frame);
+    bool handleReject(ClientSession *session, const QJsonObject &frame);
+    bool handleDelete(ClientSession *session, const QJsonObject &frame);
 
     void sendError(ClientSession *session, int code, const QString &message);
     void sendResp(ClientSession *session, const QString &type, bool ok, const QString &message);

@@ -5,10 +5,13 @@
 #include <QDialog>
 #include <QFileDialog>
 #include <QFrame>
+#include <QGraphicsDropShadowEffect>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QImage>
+#include <QLinearGradient>
+#include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
 #include <QInputDialog>
@@ -18,6 +21,8 @@
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QResizeEvent>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -25,6 +30,7 @@
 
 #include "LunaProtocol/MessageTypes.h"
 #include "Network/LunaClient.h"
+#include "UI/Widgets/ConfirmDialog.h"
 #include "UI/Widgets/AvatarCropper.h"
 
 namespace {
@@ -109,10 +115,10 @@ public:
         m_likeButton = new QPushButton(QStringLiteral("赞"), this);
         m_commentButton = new QPushButton(QStringLiteral("评论"), this);
         m_deleteButton = new QPushButton(QStringLiteral("删除"), this);
-        m_commentsLabel = new QLabel(this);
-        m_commentsLabel->setWordWrap(true);
-        m_commentsLabel->setObjectName(QStringLiteral("MomentComments"));
-        m_commentsLabel->setTextFormat(Qt::PlainText);
+        m_commentsBox = new QWidget(this);
+        m_commentsLayout = new QVBoxLayout(m_commentsBox);
+        m_commentsLayout->setContentsMargins(0, 2, 0, 2);
+        m_commentsLayout->setSpacing(2);
         buttonRow->addWidget(m_likeButton);
         buttonRow->addWidget(m_commentButton);
         buttonRow->addStretch();
@@ -125,11 +131,34 @@ public:
         layout->addLayout(headerRow);
         layout->addWidget(m_content);
         layout->addLayout(imageRow);
-        layout->addWidget(m_commentsLabel);
+        layout->addWidget(m_commentsBox);
+
+        m_commentEditor = new QWidget(this);
+        m_commentEditor->setObjectName(QStringLiteral("MomentCommentEditor"));
+        auto *commentLayout = new QHBoxLayout(m_commentEditor);
+        commentLayout->setContentsMargins(0, 0, 0, 0);
+        commentLayout->setSpacing(8);
+        m_commentInput = new QLineEdit(m_commentEditor);
+        m_commentInput->setPlaceholderText(QStringLiteral("写评论，回车发送"));
+        m_commentSend = new QPushButton(QStringLiteral("发送"), m_commentEditor);
+        m_commentSend->setObjectName(QStringLiteral("PrimaryButton"));
+        m_commentSend->setFixedWidth(64);
+        commentLayout->addWidget(m_commentInput, 1);
+        commentLayout->addWidget(m_commentSend);
+        m_commentEditor->hide();
+
         layout->addLayout(buttonRow);
+        layout->addWidget(m_commentEditor);
 
         connect(m_likeButton, &QPushButton::clicked, this, [this]() { if (onLike) onLike(); });
-        connect(m_commentButton, &QPushButton::clicked, this, [this]() { if (onComment) onComment(); });
+        connect(m_commentButton, &QPushButton::clicked, this, [this]() {
+            const bool show = !m_commentEditor->isVisible();
+            m_commentEditor->setVisible(show);
+            if (show)
+                m_commentInput->setFocus();
+        });
+        connect(m_commentSend, &QPushButton::clicked, this, &MomentCard::submitComment);
+        connect(m_commentInput, &QLineEdit::returnPressed, this, &MomentCard::submitComment);
         connect(m_deleteButton, &QPushButton::clicked, this, [this]() { if (onDelete) onDelete(); });
     }
 
@@ -149,20 +178,38 @@ public:
         m_likeButton->setText(QStringLiteral("赞 %1").arg(likeCount));
         m_likeButton->setStyleSheet(liked ? QStringLiteral("color:#c33;") : QString());
 
-        QStringList commentLines;
-        for (const QJsonValue &value : moment.value(QStringLiteral("comments")).toArray()) {
+        while (QLayoutItem *item = m_commentsLayout->takeAt(0)) {
+            if (QWidget *widget = item->widget())
+                widget->deleteLater();
+            delete item;
+        }
+        const QJsonArray comments = moment.value(QStringLiteral("comments")).toArray();
+        for (const QJsonValue &value : comments) {
             const QJsonObject comment = value.toObject();
-            commentLines << QStringLiteral("%1：%2")
-                                .arg(comment.value(QStringLiteral("nickname")).toString(),
-                                     comment.value(QStringLiteral("content")).toString());
+            const qint64 commentId = static_cast<qint64>(
+                comment.value(QStringLiteral("commentId")).toDouble());
+            const quint64 commentUser = static_cast<quint64>(
+                comment.value(QStringLiteral("userId")).toDouble());
+            auto *label = new QLabel(QStringLiteral("%1：%2")
+                                         .arg(comment.value(QStringLiteral("nickname")).toString(),
+                                              comment.value(QStringLiteral("content")).toString()),
+                                     m_commentsBox);
+            label->setObjectName(QStringLiteral("MomentComments"));
+            label->setWordWrap(true);
+            label->setTextFormat(Qt::PlainText);
+            if (commentId > 0 && commentUser != 0 && commentUser == selfId) {
+                label->setContextMenuPolicy(Qt::CustomContextMenu);
+                connect(label, &QWidget::customContextMenuRequested, this,
+                        [this, label, commentId](const QPoint &pos) {
+                            QMenu menu(this);
+                            QAction *remove = menu.addAction(QStringLiteral("删除评论"));
+                            if (menu.exec(label->mapToGlobal(pos)) == remove && onDeleteComment)
+                                onDeleteComment(commentId);
+                        });
+            }
+            m_commentsLayout->addWidget(label);
         }
-        if (commentLines.size() > 3) {
-            const int more = commentLines.size() - 3;
-            commentLines = commentLines.mid(0, 3);
-            commentLines << QStringLiteral("查看全部 %1 条评论").arg(more + 3);
-        }
-        m_commentsLabel->setText(commentLines.join(QLatin1Char('\n')));
-        m_commentsLabel->setVisible(!commentLines.isEmpty());
+        m_commentsBox->setVisible(!comments.isEmpty());
         m_deleteButton->setVisible(mine);
         setLetterAvatar(moment.value(QStringLiteral("nickname")).toString());
 
@@ -248,19 +295,36 @@ public:
     }
 
     qint64 momentId = 0;
+    quint64 selfId = 0;
     std::function<void()> onLike;
-    std::function<void()> onComment;
+    std::function<void(const QString &)> onComment;
+    std::function<void(qint64)> onDeleteComment;
     std::function<void()> onDelete;
     std::function<void(quint64)> onOpenAuthor;   // 点头像看他的朋友圈
 
 private:
+    void submitComment()
+    {
+        const QString text = m_commentInput->text().trimmed();
+        if (text.isEmpty())
+            return;
+        if (onComment)
+            onComment(text);
+        m_commentInput->clear();
+        m_commentEditor->hide();
+    }
+
     QToolButton *m_avatar = nullptr;
     quint64 m_userId = 0;
     QLabel *m_header = nullptr;
     QLabel *m_content = nullptr;
-    QLabel *m_commentsLabel = nullptr;
+    QWidget *m_commentsBox = nullptr;
+    QVBoxLayout *m_commentsLayout = nullptr;
     QPushButton *m_likeButton = nullptr;
     QPushButton *m_commentButton = nullptr;
+    QWidget *m_commentEditor = nullptr;
+    QLineEdit *m_commentInput = nullptr;
+    QPushButton *m_commentSend = nullptr;
     QPushButton *m_deleteButton = nullptr;
     QVector<QToolButton *> m_images;
 };
@@ -284,6 +348,13 @@ MomentPage::MomentPage(LunaClient *client, quint64 userId, const QString &nickna
 
     m_bannerName = new QLabel(m_nickname, m_banner);
     m_bannerName->setObjectName(QStringLiteral("MomentBannerName"));
+    {
+        auto *shadow = new QGraphicsDropShadowEffect(m_bannerName);
+        shadow->setBlurRadius(12);
+        shadow->setColor(QColor(0, 0, 0, 150));
+        shadow->setOffset(0, 1);
+        m_bannerName->setGraphicsEffect(shadow);
+    }
     m_bannerHint = new QLabel(this);
     m_bannerHint->setVisible(false);   // 这行文字按需求去掉
     m_bannerHint->setObjectName(QStringLiteral("MomentBannerHint"));
@@ -338,15 +409,35 @@ MomentPage::MomentPage(LunaClient *client, quint64 userId, const QString &nickna
     m_cardLayout->addStretch();
     scroll->setWidget(container);
 
+    m_scroll = scroll;
+    connect(scroll->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
+        // 背景只按 15% 的速度上移，形成轻微视差
+        m_parallax = qMin(220, int(value * 0.15));
+        update();
+    });
+
     m_statusLabel = new QLabel(QStringLiteral("加载中..."), this);
 
-    auto *publishButton = new QPushButton(QStringLiteral("发布动态"), this);
     auto *refreshButton = new QPushButton(QStringLiteral("刷新"), this);
 
     auto *buttonRow = new QHBoxLayout;
-    buttonRow->addWidget(publishButton);
     buttonRow->addWidget(refreshButton);
     buttonRow->addStretch();
+
+    // 悬浮发布按钮：固定在右下角，滚动时始终可见
+    m_fab = new QPushButton(QStringLiteral("＋"), this);
+    m_fab->setObjectName(QStringLiteral("MomentFab"));
+    m_fab->setFixedSize(56, 56);
+    m_fab->setCursor(Qt::PointingHandCursor);
+    m_fab->setToolTip(QStringLiteral("发布动态"));
+    {
+        auto *shadow = new QGraphicsDropShadowEffect(m_fab);
+        shadow->setBlurRadius(24);
+        shadow->setColor(QColor(0, 0, 0, 130));
+        shadow->setOffset(0, 6);
+        m_fab->setGraphicsEffect(shadow);
+    }
+    m_fab->raise();
 
     auto *layout = new QVBoxLayout(this);
 
@@ -354,7 +445,7 @@ MomentPage::MomentPage(LunaClient *client, quint64 userId, const QString &nickna
     layout->addWidget(m_statusLabel);
     layout->addLayout(buttonRow);
 
-    connect(publishButton, &QPushButton::clicked, this, &MomentPage::onPublish);
+    connect(m_fab, &QPushButton::clicked, this, &MomentPage::onPublish);
     connect(refreshButton, &QPushButton::clicked, this, &MomentPage::refresh);
     connect(m_bannerBack, &QPushButton::clicked, this, [this]() { openUserMoments(m_userId, QString()); });
     connect(m_client, &LunaClient::frameReceived, this, &MomentPage::onFrameReceived);
@@ -364,6 +455,9 @@ MomentPage::MomentPage(LunaClient *client, quint64 userId, const QString &nickna
 
 void MomentPage::openUserMoments(quint64 userId, const QString &nickname)
 {
+    m_background = QPixmap();
+    update();
+
     if (userId == 0 || userId == m_userId) {
         m_viewUserId = 0;
         m_viewNickname.clear();
@@ -428,8 +522,8 @@ void MomentPage::onPickBackground()
     const QString dir = QCoreApplication::applicationDirPath() + QStringLiteral("/backgrounds");
     QDir().mkpath(dir);
     const QString target = dir + QStringLiteral("/moment_%1.jpg").arg(m_userId);
-    // 用裁剪器按 10:3 取景，输出 1200×360
-    AvatarCropper cropper(image, QSize(1200, 360), this);
+    // 整页背景：按接近页面的 16:10 取景，输出 1600×1000
+    AvatarCropper cropper(image, QSize(1600, 1000), this);
     if (cropper.exec() != QDialog::Accepted)
         return;
     QImage cropped = cropper.result();
@@ -452,13 +546,62 @@ void MomentPage::onPickBackground()
 
 void MomentPage::applyBannerBackground(const QString &imagePath)
 {
-    if (imagePath.isEmpty() || !m_banner)
+    QImage image(imagePath);
+    if (image.isNull())
         return;
 
-    // 用 QSS 的 background-image 铺满横幅（裁剪后的正方形会拉伸铺满）
-    m_banner->setStyleSheet(
-        QStringLiteral("QWidget#MomentBanner { border-image: url(%1) 0 0 0 0 stretch stretch; }")
-            .arg(imagePath));
+    // 整页背景：先缩小再放大做一次轻量柔化，避免照片细节抢文字
+    const QSize small(qMax(1, image.width() / 3), qMax(1, image.height() / 3));
+    image = image.scaled(small, Qt::IgnoreAspectRatio, Qt::SmoothTransformation)
+                 .scaled(image.width(), image.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+
+    m_background = QPixmap::fromImage(image);
+    m_scaledSize = QSize();   // 让下次绘制重新预缩放
+    if (m_banner)
+        m_banner->setStyleSheet(QString());   // 背景不再画在横幅上
+    update();
+}
+
+void MomentPage::paintEvent(QPaintEvent *event)
+{
+    if (m_background.isNull()) {
+        QWidget::paintEvent(event);
+        return;
+    }
+
+    if (m_backgroundScaled.isNull() || m_scaledSize != size()) {
+        m_backgroundScaled = m_background.scaled(QSize(width(), height() + 260),
+                                                 Qt::KeepAspectRatioByExpanding,
+                                                 Qt::SmoothTransformation);
+        m_scaledSize = size();
+    }
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+    // 背景比页面高，按滚动量慢速上移，形成视差
+    painter.drawPixmap((width() - m_backgroundScaled.width()) / 2,
+                       -m_parallax,
+                       m_backgroundScaled);
+
+    // 压暗层：顶部轻、底部重，保证白字与卡片可读
+    QLinearGradient scrim(0, 0, 0, height());
+    scrim.setColorAt(0.0, QColor(10, 8, 22, 70));
+    scrim.setColorAt(0.45, QColor(10, 8, 22, 115));
+    scrim.setColorAt(1.0, QColor(10, 8, 22, 180));
+    painter.fillRect(rect(), scrim);
+}
+
+void MomentPage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    m_scaledSize = QSize();
+
+    if (m_fab) {
+        m_fab->move(width() - m_fab->width() - 24,
+                    height() - m_fab->height() - 92);
+        m_fab->raise();
+    }
 }
 
 void MomentPage::setBannerAvatar(const QByteArray &bytes)
@@ -552,17 +695,22 @@ void MomentPage::rebuild(const QJsonArray &moments)
             data.insert(QStringLiteral("momentId"), static_cast<double>(momentId));
             m_client->sendFrame(makeFrame(MsgType::kMomentLike, data));
         };
-        card->onComment = [this, momentId]() {
-            bool ok = false;
-            const QString text = QInputDialog::getText(this, QStringLiteral("评论"),
-                                                       QStringLiteral("写点什么："),
-                                                       QLineEdit::Normal, QString(), &ok);
-            if (!ok || text.trimmed().isEmpty())
+        card->onComment = [this, momentId](const QString &text) {
+            if (text.trimmed().isEmpty())
                 return;
             QJsonObject data;
             data.insert(QStringLiteral("momentId"), static_cast<double>(momentId));
             data.insert(QStringLiteral("content"), text.trimmed());
             m_client->sendFrame(makeFrame(MsgType::kMomentComment, data));
+        };
+        card->selfId = m_userId;
+        card->onDeleteComment = [this](qint64 commentId) {
+            if (!ConfirmDialog::ask(this, QStringLiteral("删除评论"),
+                                    QStringLiteral("确定删除这条评论吗？"), QStringLiteral("删除")))
+                return;
+            QJsonObject data;
+            data.insert(QStringLiteral("commentId"), static_cast<double>(commentId));
+            m_client->sendFrame(makeFrame(MsgType::kMomentCommentDelete, data));
         };
         card->onDelete = [this, momentId]() {
             QJsonObject data;
@@ -682,7 +830,10 @@ void MomentPage::onFrameReceived(const QJsonObject &frame)
         const QByteArray bytes = QByteArray::fromBase64(
             bgData.value(QStringLiteral("data")).toString().toLatin1());
         if (bytes.isEmpty()) {
-            m_banner->setStyleSheet(QString());   // 没设置背景 → 回退默认渐变
+            m_background = QPixmap();
+            if (m_banner)
+                m_banner->setStyleSheet(QString());
+            update();
             return;
         }
 
@@ -718,7 +869,7 @@ void MomentPage::onFrameReceived(const QJsonObject &frame)
     }
 
     if (type == MsgType::kMomentLikeResp || type == MsgType::kMomentCommentResp
-        || type == MsgType::kMomentDeleteResp) {
+        || type == MsgType::kMomentDeleteResp || type == MsgType::kMomentCommentDeleteResp) {
         refresh();
         return;
     }

@@ -267,7 +267,7 @@ QJsonArray DbManager::recentGroupMessages(qint64 groupId, int limit)
     QSqlQuery query(db());
     query.prepare(QStringLiteral(
         "SELECT m.id, m.from_user_id, u.nickname, m.content, "
-        "DATE_FORMAT(m.created_at, '%Y-%m-%d %H:%i:%s'), m.msg_type "
+        "DATE_FORMAT(m.created_at, '%Y-%m-%d %H:%i:%s'), m.msg_type, m.recalled "
         "FROM message m JOIN `user` u ON u.id = m.from_user_id "
         "WHERE m.group_id = ? ORDER BY m.id DESC LIMIT ?"));
     query.addBindValue(groupId);
@@ -287,6 +287,7 @@ QJsonArray DbManager::recentGroupMessages(qint64 groupId, int limit)
         item.insert(QStringLiteral("content"), query.value(3).toString());
         item.insert(QStringLiteral("createdAt"), query.value(4).toString());
         item.insert(QStringLiteral("msgType"), query.value(5).toString());
+        item.insert(QStringLiteral("recalled"), query.value(6).toInt() > 0);
         rows.prepend(item);
     }
     for (const QJsonObject &row : rows)
@@ -303,7 +304,7 @@ QJsonArray DbManager::recentPrivateMessages(quint64 selfId, quint64 peerId, int 
     QSqlQuery query(db());
     query.prepare(QStringLiteral(
         "SELECT m.id, m.from_user_id, u.nickname, m.content, "
-        "DATE_FORMAT(m.created_at, '%Y-%m-%d %H:%i:%s'), m.msg_type "
+        "DATE_FORMAT(m.created_at, '%Y-%m-%d %H:%i:%s'), m.msg_type, m.recalled "
         "FROM message m JOIN `user` u ON u.id = m.from_user_id "
         "WHERE (m.from_user_id = ? AND m.to_user_id = ?) "
         "   OR (m.from_user_id = ? AND m.to_user_id = ?) "
@@ -327,11 +328,47 @@ QJsonArray DbManager::recentPrivateMessages(quint64 selfId, quint64 peerId, int 
         item.insert(QStringLiteral("content"), query.value(3).toString());
         item.insert(QStringLiteral("createdAt"), query.value(4).toString());
         item.insert(QStringLiteral("msgType"), query.value(5).toString());
+        item.insert(QStringLiteral("recalled"), query.value(6).toInt() > 0);
         rows.prepend(item);
     }
     for (const QJsonObject &row : rows)
         result.append(row);
     return result;
+}
+
+QJsonObject DbManager::messageInfo(qint64 messageId)
+{
+    QJsonObject info;
+    if (!isOpen() || messageId <= 0)
+        return info;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "SELECT from_user_id, to_user_id, group_id, recalled FROM message WHERE id = ?"));
+    query.addBindValue(messageId);
+    if (!query.exec() || !query.next())
+        return info;
+
+    info.insert(QStringLiteral("fromUser"), static_cast<double>(query.value(0).toULongLong()));
+    info.insert(QStringLiteral("toUser"), static_cast<double>(query.value(1).toULongLong()));
+    info.insert(QStringLiteral("groupId"), static_cast<double>(query.value(2).toLongLong()));
+    info.insert(QStringLiteral("recalled"), query.value(3).toInt() > 0);
+    return info;
+}
+
+bool DbManager::recallMessage(qint64 messageId, quint64 userId)
+{
+    if (!isOpen() || messageId <= 0 || userId == 0)
+        return false;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "UPDATE message SET recalled = 1, content = '' "
+        "WHERE id = ? AND from_user_id = ? AND recalled = 0 "
+        "  AND TIMESTAMPDIFF(SECOND, created_at, NOW()) <= 120"));
+    query.addBindValue(messageId);
+    query.addBindValue(static_cast<qlonglong>(userId));
+    return query.exec() && query.numRowsAffected() > 0;
 }
 
 bool DbManager::storeOfflineMessage(quint64 toUser, const QString &payloadJson)
@@ -857,7 +894,7 @@ QJsonArray DbManager::listMoments(int page, int pageSize, quint64 selfId)
         QJsonArray comments;
         QSqlQuery commentQuery(db());
         commentQuery.prepare(QStringLiteral(
-            "SELECT u.nickname, c.content FROM moment_comment c "
+            "SELECT c.id, c.user_id, u.nickname, c.content FROM moment_comment c "
             "JOIN `user` u ON u.id = c.user_id "
             "WHERE c.moment_id = ? ORDER BY c.id DESC LIMIT 3"));
         commentQuery.addBindValue(momentId);
@@ -865,8 +902,10 @@ QJsonArray DbManager::listMoments(int page, int pageSize, quint64 selfId)
             QList<QJsonObject> rows;
             while (commentQuery.next()) {
                 QJsonObject comment;
-                comment.insert(QStringLiteral("nickname"), commentQuery.value(0).toString());
-                comment.insert(QStringLiteral("content"), commentQuery.value(1).toString());
+                comment.insert(QStringLiteral("commentId"), static_cast<double>(commentQuery.value(0).toLongLong()));
+                comment.insert(QStringLiteral("userId"), static_cast<double>(commentQuery.value(1).toULongLong()));
+                comment.insert(QStringLiteral("nickname"), commentQuery.value(2).toString());
+                comment.insert(QStringLiteral("content"), commentQuery.value(3).toString());
                 rows.prepend(comment);
             }
             for (const QJsonObject &row : rows)
@@ -959,6 +998,19 @@ int DbManager::addMomentComment(qint64 momentId, quint64 userId, const QString &
     if (count.exec() && count.next())
         return count.value(0).toInt();
     return 0;
+}
+
+bool DbManager::deleteMomentComment(qint64 commentId, quint64 userId)
+{
+    if (!isOpen() || commentId <= 0 || userId == 0)
+        return false;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "DELETE FROM moment_comment WHERE id = ? AND user_id = ?"));
+    query.addBindValue(commentId);
+    query.addBindValue(static_cast<qlonglong>(userId));
+    return query.exec() && query.numRowsAffected() > 0;
 }
 
 bool DbManager::deleteMoment(qint64 momentId, quint64 userId)
@@ -1218,6 +1270,261 @@ QJsonArray DbManager::friendsOf(quint64 userId)
     }
     return result;
 }
+
+QJsonArray DbManager::searchUsers(const QString &keyword, quint64 excludeUserId, int limit)
+{
+    QJsonArray result;
+    const QString trimmed = keyword.trimmed();
+    if (!isOpen() || trimmed.isEmpty())
+        return result;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "SELECT id, username, nickname FROM `user` "
+        "WHERE id <> ? AND (username LIKE ? OR nickname LIKE ?) "
+        "ORDER BY username LIMIT ?"));
+    const QString pattern = QStringLiteral("%%1%").arg(trimmed);
+    query.addBindValue(static_cast<qlonglong>(excludeUserId));
+    query.addBindValue(pattern);
+    query.addBindValue(pattern);
+    query.addBindValue(limit);
+    if (!query.exec())
+        return result;
+
+    while (query.next()) {
+        QJsonObject item;
+        item.insert(QStringLiteral("userId"), static_cast<double>(query.value(0).toULongLong()));
+        item.insert(QStringLiteral("username"), query.value(1).toString());
+        item.insert(QStringLiteral("nickname"), query.value(2).toString());
+        result.append(item);
+    }
+    return result;
+}
+QJsonArray DbManager::pendingFriendRequests(quint64 userId)
+{
+    QJsonArray result;
+    if (!isOpen() || userId == 0)
+        return result;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "SELECT u.id, u.username, u.nickname, f.created_at FROM friend f "
+        "JOIN `user` u ON u.id = f.user_id "
+        "WHERE f.friend_id = ? AND f.status = 'pending' ORDER BY f.created_at DESC"));
+    query.addBindValue(static_cast<qlonglong>(userId));
+    if (!query.exec())
+        return result;
+
+    while (query.next()) {
+        QJsonObject item;
+        item.insert(QStringLiteral("fromUser"), static_cast<double>(query.value(0).toULongLong()));
+        item.insert(QStringLiteral("username"), query.value(1).toString());
+        item.insert(QStringLiteral("nickname"), query.value(2).toString());
+        item.insert(QStringLiteral("createdAt"), query.value(3).toString());
+        result.append(item);
+    }
+    return result;
+}
+
+QJsonArray DbManager::recommendUsers(quint64 excludeUserId, int limit)
+{
+    QJsonArray result;
+    if (!isOpen() || excludeUserId == 0)
+        return result;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "SELECT u.id, u.username, u.nickname FROM `user` u "
+        "WHERE u.id <> ? "
+        "  AND NOT EXISTS(SELECT 1 FROM friend f WHERE f.user_id = ? "
+        "                 AND f.friend_id = u.id AND f.status = 'accepted') "
+        "ORDER BY RAND() LIMIT ?"));
+    query.addBindValue(static_cast<qlonglong>(excludeUserId));
+    query.addBindValue(static_cast<qlonglong>(excludeUserId));
+    query.addBindValue(limit);
+    if (!query.exec())
+        return result;
+
+    while (query.next()) {
+        QJsonObject item;
+        item.insert(QStringLiteral("userId"), static_cast<double>(query.value(0).toULongLong()));
+        item.insert(QStringLiteral("username"), query.value(1).toString());
+        item.insert(QStringLiteral("nickname"), query.value(2).toString());
+        result.append(item);
+    }
+    return result;
+}
+
+bool DbManager::rejectFriend(quint64 fromUser, quint64 toUser)
+{
+    if (!isOpen())
+        return false;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "DELETE FROM friend WHERE user_id = ? AND friend_id = ? AND status = 'pending'"));
+    query.addBindValue(static_cast<qlonglong>(fromUser));
+    query.addBindValue(static_cast<qlonglong>(toUser));
+    return query.exec();
+}
+
+bool DbManager::removeFriend(quint64 a, quint64 b)
+{
+    if (!isOpen() || a == 0 || b == 0 || a == b)
+        return false;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "DELETE FROM friend WHERE (user_id = ? AND friend_id = ?) "
+        "   OR (user_id = ? AND friend_id = ?)"));
+    query.addBindValue(static_cast<qlonglong>(a));
+    query.addBindValue(static_cast<qlonglong>(b));
+    query.addBindValue(static_cast<qlonglong>(b));
+    query.addBindValue(static_cast<qlonglong>(a));
+    return query.exec() && query.numRowsAffected() > 0;
+}
+
+QJsonArray DbManager::searchGroups(const QString &keyword, quint64 userId, int limit)
+{
+    QJsonArray result;
+    if (!isOpen())
+        return result;
+
+    const QString trimmed = keyword.trimmed();
+    QSqlQuery query(db());
+    if (trimmed.isEmpty()) {
+        // 未搜索：随机推荐几个还没加入、也没申请过的群
+        query.prepare(QStringLiteral(
+            "SELECT g.id, g.group_name, g.announcement, "
+            "  (SELECT COUNT(*) FROM group_member m WHERE m.group_id = g.id) AS members, "
+            "  0 AS joined, 0 AS requested "
+            "FROM chat_group g "
+            "WHERE NOT EXISTS(SELECT 1 FROM group_member m2 WHERE m2.group_id = g.id AND m2.user_id = ?) "
+            "  AND NOT EXISTS(SELECT 1 FROM group_join_request r WHERE r.group_id = g.id AND r.user_id = ? AND r.status = 'pending') "
+            "ORDER BY RAND() LIMIT ?"));
+        query.addBindValue(static_cast<qlonglong>(userId));
+        query.addBindValue(static_cast<qlonglong>(userId));
+        query.addBindValue(limit);
+    } else {
+        query.prepare(QStringLiteral(
+            "SELECT g.id, g.group_name, g.announcement, "
+            "  (SELECT COUNT(*) FROM group_member m WHERE m.group_id = g.id) AS members, "
+            "  EXISTS(SELECT 1 FROM group_member m2 WHERE m2.group_id = g.id AND m2.user_id = ?) AS joined, "
+            "  EXISTS(SELECT 1 FROM group_join_request r WHERE r.group_id = g.id AND r.user_id = ? AND r.status = 'pending') AS requested "
+            "FROM chat_group g WHERE g.group_name LIKE ? "
+            "ORDER BY members DESC, g.id ASC LIMIT ?"));
+        const QString pattern = QStringLiteral("%%1%").arg(trimmed);
+        query.addBindValue(static_cast<qlonglong>(userId));
+        query.addBindValue(static_cast<qlonglong>(userId));
+        query.addBindValue(pattern);
+        query.addBindValue(limit);
+    }
+    if (!query.exec())
+        return result;
+
+    while (query.next()) {
+        QJsonObject item;
+        item.insert(QStringLiteral("groupId"), static_cast<double>(query.value(0).toLongLong()));
+        item.insert(QStringLiteral("name"), query.value(1).toString());
+        item.insert(QStringLiteral("announcement"), query.value(2).toString());
+        item.insert(QStringLiteral("memberCount"), query.value(3).toInt());
+        item.insert(QStringLiteral("joined"), query.value(4).toBool());
+        item.insert(QStringLiteral("requested"), query.value(5).toBool());
+        result.append(item);
+    }
+    return result;
+}
+
+qint64 DbManager::requestGroupJoin(qint64 groupId, quint64 userId)
+{
+    if (!isOpen() || groupId <= 0 || userId == 0)
+        return 0;
+
+    QSqlQuery insert(db());
+    insert.prepare(QStringLiteral(
+        "INSERT INTO group_join_request (group_id, user_id, status) VALUES (?, ?, 'pending') "
+        "ON DUPLICATE KEY UPDATE status = 'pending', created_at = CURRENT_TIMESTAMP"));
+    insert.addBindValue(groupId);
+    insert.addBindValue(static_cast<qlonglong>(userId));
+    if (!insert.exec())
+        return 0;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "SELECT id FROM group_join_request WHERE group_id = ? AND user_id = ?"));
+    query.addBindValue(groupId);
+    query.addBindValue(static_cast<qlonglong>(userId));
+    if (!query.exec() || !query.next())
+        return 0;
+    return query.value(0).toLongLong();
+}
+
+QJsonArray DbManager::pendingGroupJoinRequests(quint64 adminId)
+{
+    QJsonArray result;
+    if (!isOpen() || adminId == 0)
+        return result;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "SELECT r.id, r.group_id, g.group_name, r.user_id, u.nickname, u.username, r.created_at "
+        "FROM group_join_request r "
+        "JOIN chat_group g ON g.id = r.group_id "
+        "JOIN group_member m ON m.group_id = r.group_id AND m.user_id = ? "
+        "                  AND m.role IN ('owner','admin') "
+        "JOIN `user` u ON u.id = r.user_id "
+        "WHERE r.status = 'pending' ORDER BY r.created_at DESC"));
+    query.addBindValue(static_cast<qlonglong>(adminId));
+    if (!query.exec())
+        return result;
+
+    while (query.next()) {
+        QJsonObject item;
+        item.insert(QStringLiteral("requestId"), static_cast<double>(query.value(0).toLongLong()));
+        item.insert(QStringLiteral("groupId"), static_cast<double>(query.value(1).toLongLong()));
+        item.insert(QStringLiteral("groupName"), query.value(2).toString());
+        item.insert(QStringLiteral("userId"), static_cast<double>(query.value(3).toULongLong()));
+        item.insert(QStringLiteral("nickname"), query.value(4).toString());
+        item.insert(QStringLiteral("username"), query.value(5).toString());
+        item.insert(QStringLiteral("createdAt"), query.value(6).toString());
+        result.append(item);
+    }
+    return result;
+}
+
+QJsonObject DbManager::groupJoinRequestById(qint64 requestId)
+{
+    QJsonObject result;
+    if (!isOpen() || requestId <= 0)
+        return result;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "SELECT id, group_id, user_id, status FROM group_join_request WHERE id = ?"));
+    query.addBindValue(requestId);
+    if (!query.exec() || !query.next())
+        return result;
+
+    result.insert(QStringLiteral("requestId"), static_cast<double>(query.value(0).toLongLong()));
+    result.insert(QStringLiteral("groupId"), static_cast<double>(query.value(1).toLongLong()));
+    result.insert(QStringLiteral("userId"), static_cast<double>(query.value(2).toULongLong()));
+    result.insert(QStringLiteral("status"), query.value(3).toString());
+    return result;
+}
+
+bool DbManager::updateGroupJoinRequest(qint64 requestId, const QString &status)
+{
+    if (!isOpen())
+        return false;
+
+    QSqlQuery query(db());
+    query.prepare(QStringLiteral(
+        "UPDATE group_join_request SET status = ? WHERE id = ? AND status = 'pending'"));
+    query.addBindValue(status);
+    query.addBindValue(requestId);
+    return query.exec() && query.numRowsAffected() > 0;
+}
+
 // ================= 阶段11：群资料与群生命周期 =================
 
 QJsonObject DbManager::groupInfo(qint64 groupId, quint64 userId)

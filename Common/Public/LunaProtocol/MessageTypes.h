@@ -19,6 +19,18 @@ inline const QString kGroupList       = QStringLiteral("group_list");
 inline const QString kGroupListResp   = QStringLiteral("group_list_resp");
 inline const QString kGroupInvite     = QStringLiteral("group_invite");
 inline const QString kGroupInviteResp = QStringLiteral("group_invite_resp");
+// 阶段18 新增登记：群聊搜索与加入申请
+inline const QString kGroupSearch          = QStringLiteral("group_search");
+inline const QString kGroupSearchResp      = QStringLiteral("group_search_resp");
+inline const QString kGroupJoinRequest     = QStringLiteral("group_join_request");
+inline const QString kGroupJoinRequestResp = QStringLiteral("group_join_request_resp");
+inline const QString kGroupJoinRequests    = QStringLiteral("group_join_requests");
+inline const QString kGroupJoinRequestsResp= QStringLiteral("group_join_requests_resp");
+inline const QString kGroupJoinAccept      = QStringLiteral("group_join_accept");
+inline const QString kGroupJoinReject      = QStringLiteral("group_join_reject");
+inline const QString kGroupJoinHandleResp  = QStringLiteral("group_join_handle_resp");
+inline const QString kGroupJoinNotify      = QStringLiteral("group_join_notify");
+inline const QString kGroupJoinResult      = QStringLiteral("group_join_result");
 inline const QString kKick          = QStringLiteral("kick");
 inline const QString kError         = QStringLiteral("error");
 // 阶段11 新增登记：好友系统
@@ -27,6 +39,15 @@ inline const QString kFriendAccept      = QStringLiteral("friend_accept");
 inline const QString kFriendList        = QStringLiteral("friend_list");
 inline const QString kFriendListResp    = QStringLiteral("friend_list_resp");
 inline const QString kFriendNotify      = QStringLiteral("friend_notify");
+// 阶段18 新增登记：好友申请待处理列表与拒绝
+inline const QString kFriendRequests     = QStringLiteral("friend_requests");
+inline const QString kFriendRequestsResp = QStringLiteral("friend_requests_resp");
+inline const QString kFriendReject       = QStringLiteral("friend_reject");
+inline const QString kFriendDelete       = QStringLiteral("friend_delete");
+inline const QString kFriendDeleteResp   = QStringLiteral("friend_delete_resp");
+// 阶段15 新增登记：加好友页按用户名/昵称关键词搜索
+inline const QString kUserSearch     = QStringLiteral("user_search");
+inline const QString kUserSearchResp = QStringLiteral("user_search_resp");
 // 阶段11 新增登记：个人资料（改昵称 / 换头像 / 个人主页）
 inline const QString kProfileGet    = QStringLiteral("profile_get");
 inline const QString kProfileUpdate = QStringLiteral("profile_update");
@@ -41,6 +62,8 @@ inline const QString kChatBroadcast = QStringLiteral("chat_broadcast");
 // 阶段3 新增登记：历史消息查询（协议 §4.3 未列，按规范先在此登记）
 inline const QString kChatHistory     = QStringLiteral("chat_history");
 inline const QString kChatHistoryResp = QStringLiteral("chat_history_resp");
+inline const QString kChatRecall      = QStringLiteral("chat_recall");
+inline const QString kChatRecallResp  = QStringLiteral("chat_recall_resp");
 inline const QString kOfflineMsg    = QStringLiteral("offline_msg");
 inline const QString kFileMeta      = QStringLiteral("file_meta");
 inline const QString kFileChunk     = QStringLiteral("file_chunk");
@@ -73,6 +96,8 @@ inline const QString kMomentImage       = QStringLiteral("moment_image");
 inline const QString kMomentImageResp   = QStringLiteral("moment_image_resp");
 inline const QString kMomentLikeResp    = QStringLiteral("moment_like_resp");
 inline const QString kMomentCommentResp = QStringLiteral("moment_comment_resp");
+inline const QString kMomentCommentDelete     = QStringLiteral("moment_comment_delete");
+inline const QString kMomentCommentDeleteResp = QStringLiteral("moment_comment_delete_resp");
 inline const QString kMomentDeleteResp  = QStringLiteral("moment_delete_resp");
 
 // 随机匹配

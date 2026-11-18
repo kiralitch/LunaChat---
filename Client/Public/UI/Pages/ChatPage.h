@@ -25,7 +25,9 @@ public:
     void openPrivate(quint64 peerId, const QString &nickname);
     void clearMessages();
     void appendMessage(quint64 userId, const QString &nickname, const QString &content,
-                       bool isSelf, const QString &timeText);
+                       bool isSelf, const QString &timeText, const QString &dateKey = QString(),
+                       qint64 msgId = 0);
+    void markRecalled(qint64 msgId);
     void setAvatar(quint64 userId, const QByteArray &imageBytes);
     void clearAvatarCache();
     void setStatusText(const QString &text);
@@ -46,6 +48,8 @@ signals:
     void voiceRecordRequested();
     void avatarContextMenuRequested(quint64 userId, const QPoint &globalPos);
     void groupInfoRequested();          // 点群聊标题栏的"群资料"图标
+    void privateSettingsRequested(quint64 peerId);   // 私聊标题栏齿轮：好友设置
+    void recallRequested(qint64 msgId); // 右键自己两分钟内的消息撤回
     void groupActivityRequested();      // 点群聊标题栏的"群活动"图标
     void groupInviteRequested();        // 点群聊标题栏的"邀请成员"图标
     void groupFilesRequested();         // 点群聊标题栏的"共享文件夹"图标
@@ -63,6 +67,8 @@ private:
     QScrollArea *m_scroll = nullptr;
     QWidget *m_msgContainer = nullptr;
     QVBoxLayout *m_msgLayout = nullptr;
+    QString m_lastDateKey;
+    QHash<qint64, QLabel *> m_bubbles;
 
     QLineEdit *m_input = nullptr;
     QPushButton *m_sendButton = nullptr;

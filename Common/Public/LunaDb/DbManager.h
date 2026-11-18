@@ -52,6 +52,8 @@ public:
     // 返回按时间升序排列的 JSON 数组（每项含 msgId/fromUser/nickname/content/createdAt/msgType）
     QJsonArray recentGroupMessages(qint64 groupId, int limit);
     QJsonArray recentPrivateMessages(quint64 selfId, quint64 peerId, int limit);
+    QJsonObject messageInfo(qint64 messageId);
+    bool recallMessage(qint64 messageId, quint64 userId);
 
     bool storeOfflineMessage(quint64 toUser, const QString &payloadJson);
     // 取出并标记已投递（登录成功时调用）
@@ -90,6 +92,7 @@ public:
     QString momentImagePath(qint64 momentId, int index);
     QJsonObject toggleMomentLike(qint64 momentId, quint64 userId);   // {liked, likeCount}
     int addMomentComment(qint64 momentId, quint64 userId, const QString &content);  // 返回评论数
+    bool deleteMomentComment(qint64 commentId, quint64 userId);
     bool deleteMoment(qint64 momentId, quint64 userId);
     quint64 momentOwner(qint64 momentId);
 
@@ -115,11 +118,25 @@ public:
     bool acceptFriend(quint64 fromUser, quint64 toUser);
     bool areFriends(quint64 a, quint64 b);
     QJsonArray friendsOf(quint64 userId);   // published -> ongoing -> ended，由服务端定时器驱动                             // [{groupId,name,role,memberCount}]
+    // 按用户名/昵称关键词搜索用户（加好友页），排除自己，最多 limit 条
+    QJsonArray searchUsers(const QString &keyword, quint64 excludeUserId, int limit = 20);
+    // 随机推荐用户：排除自己与已通过的好友
+    QJsonArray recommendUsers(quint64 excludeUserId, int limit = 12);
+    // 待处理好友申请（别人加我）与拒绝
+    QJsonArray pendingFriendRequests(quint64 userId);
+    bool rejectFriend(quint64 fromUser, quint64 toUser);
+    bool removeFriend(quint64 a, quint64 b);
 
     // ---- 阶段11：群资料与群生命周期 ----
     QJsonObject groupInfo(qint64 groupId, quint64 userId);
     bool updateGroupInfo(qint64 groupId, const QString &name, const QString &announcement,
                          const QString &folderPath, const QString &avatarPath);
+    // ---- 阶段18：群聊搜索与加入申请 ----
+    QJsonArray searchGroups(const QString &keyword, quint64 userId, int limit = 30);
+    qint64 requestGroupJoin(qint64 groupId, quint64 userId);   // 返回 requestId，0 表示失败
+    QJsonArray pendingGroupJoinRequests(quint64 adminId);
+    QJsonObject groupJoinRequestById(qint64 requestId);
+    bool updateGroupJoinRequest(qint64 requestId, const QString &status);
     bool transferGroupOwner(qint64 groupId, quint64 newOwnerId);
     bool removeGroupMember(qint64 groupId, quint64 userId);
     bool dissolveGroup(qint64 groupId);

@@ -1,4 +1,4 @@
-# 数据库设计（luna_chat，16 张表）
+# 数据库设计（luna_chat，17 张表）
 
 > 建库脚本：`sql/schema.sql`；ER 图：`docs/paper/figures/03_er.png`（可直接插入论文第 4 章）。
 
@@ -11,6 +11,7 @@
 | 用户域 | `login_log` | 登录审计（时间、IP） |
 | 群组域 | `chat_group` | 群名、群主、群公告、共享文件夹路径 |
 | 群组域 | `group_member` | 群成员与角色（owner / admin / member） |
+| 群组域 | `group_join_request` | 群搜索后的加入申请（pending / accepted / rejected） |
 | 群组域 | `group_activity` | 群活动（时间、地点、人数上限、状态） |
 | 群组域 | `activity_signup` | 活动报名记录 |
 | 内容域 | `message` | 群聊 / 私聊消息（text / file / voice） |

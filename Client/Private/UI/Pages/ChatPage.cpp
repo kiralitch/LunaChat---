@@ -2,6 +2,8 @@
 
 #include <QContextMenuEvent>
 #include <QCursor>
+#include <QDate>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QEvent>
 #include <QHBoxLayout>
@@ -70,7 +72,12 @@ ChatPage::ChatPage(QWidget *parent)
     m_groupActivityButton = makeIconButton(QStringLiteral(":/icons/group_activity.png"), QStringLiteral("群活动"));
     m_groupInviteButton = makeIconButton(QStringLiteral(":/icons/group_invite.png"), QStringLiteral("邀请成员"));
     m_groupFilesButton = makeIconButton(QStringLiteral(":/icons/folder.png"), QStringLiteral("共享文件夹"));
-    connect(m_groupInfoButton, &QToolButton::clicked, this, &ChatPage::groupInfoRequested);
+    connect(m_groupInfoButton, &QToolButton::clicked, this, [this]() {
+        if (m_groupId > 0)
+            emit groupInfoRequested();
+        else if (m_peerId > 0)
+            emit privateSettingsRequested(m_peerId);
+    });
     connect(m_groupActivityButton, &QToolButton::clicked, this, &ChatPage::groupActivityRequested);
     connect(m_groupInviteButton, &QToolButton::clicked, this, &ChatPage::groupInviteRequested);
     connect(m_groupFilesButton, &QToolButton::clicked, this, &ChatPage::groupFilesRequested);
@@ -94,6 +101,7 @@ ChatPage::ChatPage(QWidget *parent)
     m_input->setObjectName(QStringLiteral("MessageInput"));
     m_input->setPlaceholderText(QStringLiteral("输入消息，回车发送"));
     m_sendButton = new QPushButton(QStringLiteral("发送"), this);
+    m_sendButton->setObjectName(QStringLiteral("PrimaryButton"));
     m_fileButton = new QPushButton(QStringLiteral("发送文件"), this);
     m_voiceButton = new QPushButton(QStringLiteral("语音"), this);
 
@@ -110,8 +118,8 @@ ChatPage::ChatPage(QWidget *parent)
     inputRow->addWidget(m_sendButton);
 
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
+    layout->setContentsMargins(12, 8, 12, 10);
+    layout->setSpacing(8);
     // 标题栏：群头像 + 群名/N 人 + 右侧两个图标
     m_groupAvatarLabel = new QLabel(this);
     m_groupAvatarLabel->setFixedSize(30, 30);
@@ -167,6 +175,7 @@ void ChatPage::openGroup(qint64 groupId, const QString &title)
     m_peerId = 0;
     m_titleLabel->setText(title);
     m_groupInfoButton->setVisible(true);
+    m_groupInfoButton->setToolTip(QStringLiteral("群资料"));
     m_groupActivityButton->setVisible(true);
     m_groupInviteButton->setVisible(true);
     m_groupFilesButton->setVisible(true);
@@ -184,7 +193,8 @@ void ChatPage::openPrivate(quint64 peerId, const QString &nickname)
     m_groupId = 0;
     m_peerId = peerId;
     m_titleLabel->setText(QStringLiteral("与 %1 的私聊").arg(nickname));
-    m_groupInfoButton->setVisible(false);
+    m_groupInfoButton->setVisible(true);
+    m_groupInfoButton->setToolTip(QStringLiteral("好友设置"));
     m_groupActivityButton->setVisible(false);
     m_groupInviteButton->setVisible(false);
     m_groupFilesButton->setVisible(false);
@@ -205,6 +215,8 @@ void ChatPage::clearMessages()
     }
     m_avatarLabels.clear();
     m_avatarOwners.clear();
+    m_lastDateKey.clear();
+    m_bubbles.clear();
 }
 
 bool ChatPage::eventFilter(QObject *watched, QEvent *event)
@@ -240,8 +252,32 @@ void ChatPage::setAvatar(quint64 userId, const QByteArray &imageBytes)
 }
 
 void ChatPage::appendMessage(quint64 userId, const QString &nickname, const QString &content,
-                             bool isSelf, const QString &timeText)
+                             bool isSelf, const QString &timeText, const QString &dateKey,
+                             qint64 msgId)
 {
+    if (!dateKey.isEmpty() && dateKey != m_lastDateKey) {
+        m_lastDateKey = dateKey;
+        QString label = dateKey;
+        const QDate date = QDate::fromString(dateKey, QStringLiteral("yyyy-MM-dd"));
+        if (date.isValid()) {
+            const QDate today = QDate::currentDate();
+            if (date == today)
+                label = QStringLiteral("今天");
+            else if (date == today.addDays(-1))
+                label = QStringLiteral("昨天");
+            else
+                label = date.toString(QStringLiteral("yyyy 年 M 月 d 日"));
+        }
+        auto *separator = new QWidget(m_msgContainer);
+        auto *separatorLayout = new QHBoxLayout(separator);
+        separatorLayout->setContentsMargins(0, 10, 0, 4);
+        auto *text = new QLabel(label, separator);
+        text->setObjectName(QStringLiteral("ChatDateLabel"));
+        text->setAlignment(Qt::AlignCenter);
+        separatorLayout->addWidget(text);
+        m_msgLayout->insertWidget(m_msgLayout->count() - 1, separator);
+    }
+
     auto *row = new QWidget(m_msgContainer);
     row->setObjectName(QStringLiteral("MessageRow"));
 
@@ -280,6 +316,21 @@ void ChatPage::appendMessage(quint64 userId, const QString &nickname, const QStr
     bubble->setMaximumWidth(560);
     bubble->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Minimum);
 
+    if (msgId > 0) {
+        m_bubbles.insert(msgId, bubble);
+        if (isSelf) {
+            bubble->setContextMenuPolicy(Qt::CustomContextMenu);
+            connect(bubble, &QWidget::customContextMenuRequested, this,
+                    [this, bubble, msgId](const QPoint &pos) {
+                        QMenu menu(this);
+                        QAction *recall = menu.addAction(QStringLiteral("撤回"));
+                        QAction *chosen = menu.exec(bubble->mapToGlobal(pos));
+                        if (chosen == recall)
+                            emit recallRequested(msgId);
+                    });
+        }
+    }
+
     auto *bubbleRow = new QHBoxLayout;
     bubbleRow->setContentsMargins(0, 0, 0, 0);
     if (isSelf) {
@@ -305,6 +356,19 @@ void ChatPage::appendMessage(quint64 userId, const QString &nickname, const QStr
     }
 
     addRow(row);
+}
+
+void ChatPage::markRecalled(qint64 msgId)
+{
+    auto *bubble = m_bubbles.value(msgId, nullptr);
+    if (!bubble)
+        return;
+
+    bubble->setText(QStringLiteral("该消息已撤回"));
+    bubble->setStyleSheet(QStringLiteral(
+        "color: #8F86B8; background: transparent; font-style: italic; padding: 4px 6px;"));
+    bubble->setTextInteractionFlags(Qt::NoTextInteraction);
+    bubble->setContextMenuPolicy(Qt::NoContextMenu);
 }
 
 void ChatPage::appendVoiceMessage(const QString &nickname, const QString &timeText,

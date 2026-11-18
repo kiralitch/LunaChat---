@@ -156,7 +156,7 @@ def architecture():
     # ---- 客户端
     panel(d, (60, 140, 2340, 620), "① 客户端 Client.exe（Qt 5.15 · C++17 · Qt Widgets）", BLUE, BLUE_FILL)
     ui = head_box(d, (90, 215, 900, 590), "界面层：窗口与页面", BLUE, [
-        "LoginWindow / RegisterDialog  登录注册",
+        "LoginWindow  登录 / 内嵌注册卡片",
         "MainWindow  会话列表 + 聊天区",
         "ChatPage  气泡 / 表情 / 图片 / 语音条",
         "MomentPage  朋友圈   MatchPage  随机匹配",

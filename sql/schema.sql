@@ -1,4 +1,4 @@
-﻿-- LunaChat 数据库初始化脚本（MySQL 8.0+ / 9.x）
+-- LunaChat 数据库初始化脚本（MySQL 8.0+ / 9.x）
 -- 用法：mysql -h127.0.0.1 -uroot -p --default-character-set=utf8mb4 -e "source D:/qtproject/LunaChat/LunaChat---/sql/schema.sql"
 
 CREATE DATABASE IF NOT EXISTS luna_chat DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
@@ -50,6 +50,18 @@ CREATE TABLE IF NOT EXISTS group_member (
   KEY idx_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 阶段18：群聊搜索后的加入申请（群主/管理员同意后写入 group_member）
+CREATE TABLE IF NOT EXISTS group_join_request (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  group_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  status ENUM('pending','accepted','rejected') NOT NULL DEFAULT 'pending',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_group_user (group_id, user_id),
+  KEY idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS message (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   from_user_id BIGINT UNSIGNED NOT NULL,
@@ -57,6 +69,7 @@ CREATE TABLE IF NOT EXISTS message (
   group_id BIGINT UNSIGNED DEFAULT NULL,
   msg_type ENUM('text','file','voice') NOT NULL DEFAULT 'text',
   content TEXT,
+  recalled TINYINT(1) NOT NULL DEFAULT 0,
   file_id VARCHAR(64) DEFAULT NULL,
   voice_id VARCHAR(64) DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

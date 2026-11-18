@@ -7,6 +7,7 @@ class QLabel;
 class QToolButton;
 class QPushButton;
 class QTableWidget;
+class QStackedLayout;
 class LunaClient;
 
 // 群活动页面（内嵌在 MainWindow 的 QStackedWidget 里）
@@ -47,4 +48,6 @@ private:
     QPushButton *m_createButton = nullptr;
     QPushButton *m_cancelButton = nullptr;
     QToolButton *m_backButton = nullptr;
+    QStackedLayout *m_tableStack = nullptr;
+    QWidget *m_empty = nullptr;
 };

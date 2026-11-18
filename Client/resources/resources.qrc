@@ -11,6 +11,9 @@
     <file alias="search.png">icons/search.png</file>
     <file alias="folder_add.png">icons/folder_add.png</file>
     <file alias="folder.png">icons/folder.png</file>
+    <file alias="empty_folder.png">icons/empty_folder.png</file>
+    <file alias="requests.png">icons/requests.png</file>
+    <file alias="empty_activity.png">icons/empty_activity.png</file>
     <file alias="profile.png">icons/profile.png</file>
     <file alias="match.png">icons/match.png</file>
     <file alias="moments.png">icons/moments.png</file>
@@ -19,5 +22,10 @@
     <file alias="friend_add.png">icons/friend_add.png</file>
     <file alias="group_new.png">icons/group_new.png</file>
     <file alias="group_invite.png">icons/group_invite.png</file>
+    <file alias="logo.png">icons/logo.png</file>
+    <file alias="user.png">icons/user.png</file>
+    <file alias="lock.png">icons/lock.png</file>
+    <file alias="eye.png">icons/eye.png</file>
+    <file alias="eye_off.png">icons/eye_off.png</file>
   </qresource>
 </RCC>

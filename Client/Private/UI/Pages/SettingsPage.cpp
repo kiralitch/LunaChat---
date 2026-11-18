@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -130,6 +131,7 @@ SettingsPage::SettingsPage(QWidget *parent)
     form->addRow(QStringLiteral("输入电平"), m_levelBar);
     // 页面版：保存 + 返回（不再是对话框的 OK/Cancel）
     auto *saveButton = new QPushButton(QStringLiteral("保存设置"), this);
+    saveButton->setObjectName(QStringLiteral("PrimaryButton"));
     auto *backButton = new QPushButton(QStringLiteral("返回"), this);
     auto *box = new QHBoxLayout;
     box->addStretch();
@@ -141,8 +143,32 @@ SettingsPage::SettingsPage(QWidget *parent)
         emit backRequested();
     });
 
+    auto *pageTitle = new QLabel(QStringLiteral("设置"), this);
+    pageTitle->setObjectName(QStringLiteral("ChatTitle"));
+    auto *pageHint = new QLabel(QStringLiteral("外观 · 音效 · 录音"), this);
+    pageHint->setObjectName(QStringLiteral("ChatSubtitle"));
+
+    auto *titleBox = new QVBoxLayout;
+    titleBox->setContentsMargins(0, 0, 0, 0);
+    titleBox->setSpacing(0);
+    titleBox->addWidget(pageTitle);
+    titleBox->addWidget(pageHint);
+
+    auto *headerRow = new QHBoxLayout;
+    headerRow->setContentsMargins(0, 0, 0, 0);
+    headerRow->addLayout(titleBox, 1);
+
+    auto *card = new QFrame(this);
+    card->setObjectName(QStringLiteral("SettingsCard"));
+    auto *cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(20, 18, 20, 18);
+    cardLayout->addLayout(form);
+
     auto *layout = new QVBoxLayout(this);
-    layout->addLayout(form);
+    layout->setContentsMargins(18, 8, 18, 14);
+    layout->setSpacing(10);
+    layout->addLayout(headerRow);
+    layout->addWidget(card);
     layout->addStretch();
 
     layout->addLayout(box);

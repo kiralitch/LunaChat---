@@ -4,6 +4,7 @@
 #include <QSet>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QPixmap>
 #include <QWidget>
 
 class LunaClient;
@@ -23,6 +24,10 @@ public:
                QWidget *parent = nullptr);
 
     void refresh();
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void onPublish();
@@ -53,4 +58,10 @@ private:
     QHash<quint64, QByteArray> m_userAvatars;   // 头像缓存，切回来能立刻显示
     quint64 m_viewUserId = 0;      // 0 = 我的朋友圈
     QString m_viewNickname;
+    QPixmap m_background;          // 整页背景（已做柔化）
+    QPixmap m_backgroundScaled;    // 按当前页面尺寸预缩放，用于视差
+    QSize m_scaledSize;
+    int m_parallax = 0;            // 背景随滚动慢速位移的偏移量
+    class QScrollArea *m_scroll = nullptr;
+    class QPushButton *m_fab = nullptr;
 };

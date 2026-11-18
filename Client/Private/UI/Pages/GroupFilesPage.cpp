@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QInputDialog>
@@ -12,6 +13,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QStackedLayout>
 #include <QAction>
 #include <QMessageBox>
 #include <QMenu>
@@ -71,7 +73,6 @@ GroupFilesPage::GroupFilesPage(LunaClient *client, quint64 userId, QWidget *pare
     m_search = new QLineEdit(this);
     m_search->setPlaceholderText(QStringLiteral("搜索文件"));
     m_search->setClearButtonEnabled(true);
-    m_search->addAction(QIcon(QStringLiteral(":/icons/search.png")), QLineEdit::LeadingPosition);
     m_search->setFixedWidth(260);
     connect(m_search, &QLineEdit::textChanged, this, &GroupFilesPage::applyFilter);
 
@@ -95,11 +96,19 @@ GroupFilesPage::GroupFilesPage(LunaClient *client, quint64 userId, QWidget *pare
         m_upload->setText(QStringLiteral("↑"));
     connect(m_upload, &QToolButton::clicked, this, &GroupFilesPage::uploadRequested);
 
+    auto *titleBox = new QVBoxLayout;
+    titleBox->setContentsMargins(0, 0, 0, 0);
+    titleBox->setSpacing(0);
+    titleBox->addWidget(m_title);
+    auto *pageHint = new QLabel(QStringLiteral("上传、下载与整理群文件"), this);
+    pageHint->setObjectName(QStringLiteral("ChatSubtitle"));
+    titleBox->addWidget(pageHint);
+
     auto *header = new QHBoxLayout;
-    header->setContentsMargins(10, 8, 10, 6);
+    header->setContentsMargins(0, 0, 0, 4);
+    header->setSpacing(8);
     header->addWidget(m_back);
-    header->addWidget(m_title);
-    header->addStretch();
+    header->addLayout(titleBox, 1);
     header->addWidget(m_search);
     header->addWidget(m_upload);
     header->addWidget(m_mkdir);
@@ -156,10 +165,39 @@ GroupFilesPage::GroupFilesPage(LunaClient *client, quint64 userId, QWidget *pare
     m_status = new QLabel(this);
     m_status->setObjectName(QStringLiteral("ChatSubtitle"));
 
+    m_empty = new QWidget(this);
+    auto *emptyLayout = new QVBoxLayout(m_empty);
+    emptyLayout->setSpacing(6);
+    emptyLayout->addStretch();
+    auto *emptyIcon = new QLabel(m_empty);
+    emptyIcon->setPixmap(QIcon(QStringLiteral(":/icons/empty_folder.png")).pixmap(88, 88));
+    emptyIcon->setAlignment(Qt::AlignCenter);
+    auto *emptyTitle = new QLabel(QStringLiteral("这里还没有文件"), m_empty);
+    emptyTitle->setObjectName(QStringLiteral("ChatTitle"));
+    emptyTitle->setAlignment(Qt::AlignCenter);
+    auto *emptyHint = new QLabel(QStringLiteral("点右上角上传文件，或新建一个文件夹"), m_empty);
+    emptyHint->setObjectName(QStringLiteral("ChatSubtitle"));
+    emptyHint->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(emptyIcon, 0, Qt::AlignHCenter);
+    emptyLayout->addWidget(emptyTitle);
+    emptyLayout->addWidget(emptyHint);
+    emptyLayout->addStretch();
+
+    auto *listCard = new QFrame(this);
+    listCard->setObjectName(QStringLiteral("SettingsCard"));
+    auto *listLayout = new QVBoxLayout(listCard);
+    listLayout->setContentsMargins(10, 10, 10, 10);
+    m_listStack = new QStackedLayout;
+    m_listStack->addWidget(m_list);
+    m_listStack->addWidget(m_empty);
+    listLayout->addLayout(m_listStack);
+    m_listStack->setCurrentWidget(m_empty);
+
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(18, 8, 18, 14);
+    layout->setSpacing(10);
     layout->addLayout(header);
-    layout->addWidget(m_list, 1);
+    layout->addWidget(listCard, 1);
     layout->addWidget(m_status);
 
     connect(m_client, &LunaClient::frameReceived, this, &GroupFilesPage::onFrameReceived);
@@ -297,4 +335,6 @@ void GroupFilesPage::onFrameReceived(const QJsonObject &frame)
     }
 
     m_status->setText(QStringLiteral("共 %1 个文件夹、%2 个文件").arg(dirCount).arg(fileCount));
+    if (m_listStack)
+        m_listStack->setCurrentWidget(m_list->count() > 0 ? static_cast<QWidget *>(m_list) : m_empty);
 }

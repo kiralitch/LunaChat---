@@ -21,6 +21,10 @@ signals:
 private:
     bool handleCreate(ClientSession *session, const QJsonObject &frame);
     bool handleList(ClientSession *session, const QJsonObject &frame);
+    bool handleSearch(ClientSession *session, const QJsonObject &frame);
+    bool handleJoinRequest(ClientSession *session, const QJsonObject &frame);
+    bool handleJoinRequests(ClientSession *session, const QJsonObject &frame);
+    bool handleJoinHandle(ClientSession *session, const QJsonObject &frame, bool accept);
     bool handleInvite(ClientSession *session, const QJsonObject &frame);
     bool handleInfo(ClientSession *session, const QJsonObject &frame);
     bool handleInfoUpdate(ClientSession *session, const QJsonObject &frame);

@@ -2,6 +2,7 @@
 
 #include <QComboBox>
 #include <QDateTime>
+#include <QGraphicsDropShadowEffect>
 #include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -41,19 +42,40 @@ MatchPage::MatchPage(LunaClient *client, quint64 userId, const QString &nickname
     m_modeBox->addItem(QStringLiteral("语音匹配"), QStringLiteral("voice"));
 
     m_startButton = new QPushButton(QStringLiteral("开始匹配"), this);
+    m_startButton->setObjectName(QStringLiteral("PrimaryButton"));
     m_cancelButton = new QPushButton(QStringLiteral("取消匹配"), this);
     m_endButton = new QPushButton(QStringLiteral("结束会话"), this);
     m_sendButton = new QPushButton(QStringLiteral("发送"), this);
+    m_sendButton->setObjectName(QStringLiteral("PrimaryButton"));
     m_cancelButton->setEnabled(false);
     m_endButton->setEnabled(false);
     m_sendButton->setEnabled(false);
 
     m_moonLabel = new QLabel(QStringLiteral("月"), this);
     m_moonLabel->setAlignment(Qt::AlignCenter);
-    m_moonLabel->setStyleSheet(QStringLiteral("font-size:56px; color:#7a6ff0;"));
+    m_moonLabel->setStyleSheet(QStringLiteral("font-size:48px; color:#B9A8FF;"));
+    {
+        auto *glow = new QGraphicsDropShadowEffect(m_moonLabel);
+        glow->setBlurRadius(38);
+        glow->setColor(QColor(124, 92, 255, 190));
+        glow->setOffset(0, 0);
+        m_moonLabel->setGraphicsEffect(glow);
+    }
 
     m_statusLabel = new QLabel(QStringLiteral("选择模式后点击开始匹配"), this);
+    m_statusLabel->setObjectName(QStringLiteral("ChatSubtitle"));
     m_statusLabel->setAlignment(Qt::AlignCenter);
+
+    auto *pageTitle = new QLabel(QStringLiteral("随机匹配"), this);
+    pageTitle->setObjectName(QStringLiteral("ChatTitle"));
+    auto *pageHint = new QLabel(QStringLiteral("随机配对一位在线同学，聊完即散"), this);
+    pageHint->setObjectName(QStringLiteral("ChatSubtitle"));
+
+    auto *titleBox = new QVBoxLayout;
+    titleBox->setContentsMargins(0, 0, 0, 0);
+    titleBox->setSpacing(0);
+    titleBox->addWidget(pageTitle);
+    titleBox->addWidget(pageHint);
 
     m_list = new QListWidget(this);
     m_input = new QLineEdit(this);
@@ -71,6 +93,9 @@ MatchPage::MatchPage(LunaClient *client, quint64 userId, const QString &nickname
     inputRow->addWidget(m_sendButton);
 
     auto *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(18, 8, 18, 14);
+    layout->setSpacing(10);
+    layout->addLayout(titleBox);
     layout->addWidget(m_moonLabel);
     layout->addWidget(m_statusLabel);
     layout->addLayout(topRow);
